@@ -21,7 +21,6 @@ type (
 )
 
 func init() {
-	fmt.Printf("Registering adapter type: %s\n", BluezInterface.Adapter)
 	typeRegistry[BluezInterface.Adapter] = func(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) Base {
 		// need to fix the constructor
 		return newAdapter(conn, name, data)
@@ -31,17 +30,8 @@ func init() {
 
 func newAdapter(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *Adapter {
 	return &Adapter{
-		BaseObject: BaseObject{
-			conn:       conn,
-			Path:       name,
-			childType:  BluezInterface.Adapter,
-			properties: data[BluezInterface.Adapter],
-		},
+		BaseObject: *newBaseObject(conn, name, BluezInterface.Adapter, data),
 	}
-}
-
-// Update the object from the data
-func (a *Adapter) Update(data []interface{}) {
 }
 
 // StartDiscovery on the adapter
@@ -54,7 +44,7 @@ func (a *Adapter) StartDiscovery() (ObjectChangedChan, error) {
 	}
 
 	_, a.cancelDisc = context.WithCancel(context.Background())
-	ch, err := a.conn.AddWatch(a.Path, bus.ObjectManager,
+	ch, err := a.conn.AddWatch(a.Path+"*", bus.ObjectManager,
 		[]string{bus.ObjectManagerFuncs.InterfacesAdded,
 			bus.ObjectManagerFuncs.InterfacesRemoved})
 	if err != nil {
@@ -68,9 +58,9 @@ func (a *Adapter) StartDiscovery() (ObjectChangedChan, error) {
 // StopDiscovery on the adapter. This will disable getting any information from the devices
 // connected through this adapter
 func (a *Adapter) StopDiscovery() error {
-	a.cancelDisc()
+	defer a.cancelDisc()
 	// Remove ourselves as watchers
-	a.conn.RemoveWatch(a.Path, a.discoveryCh, bus.ObjectManager,
+	a.conn.RemoveWatch(a.Path+"*", a.discoveryCh, bus.ObjectManager,
 		[]string{bus.ObjectManagerFuncs.InterfacesAdded,
 			bus.ObjectManagerFuncs.InterfacesRemoved})
 
@@ -82,20 +72,3 @@ func (a *Adapter) Connect(address string) error {
 	return bus.CallFunctionWithArgs(a.conn.busConn, BluezDest, a.Path, BluezAdapter.Connect, address)
 
 }
-
-// func (a *Adapter) handleSignals(ctx context.Context, recvCh DeviceReceiverCh) {
-
-// 	for {
-// 		select {
-// 		case discData := <-a.DiscoveryCh:
-// 			//logger.Debug("Received signal: ", discData)
-// 			devDict, ok := discData.Data[BluezInterface.Device]
-// 			if !ok {
-// 				logger.Error("Unable to convert signal data to device")
-// 			}
-// 			recvCh <- newDevice(a.conn, devDict)
-// 		case <-ctx.Done():
-// 			break
-// 		}
-// 	}
-// }

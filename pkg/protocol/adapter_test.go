@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func noTestAdapter(t *testing.T) {
+func TestAdapter(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	bluez, err := InitializeBluez(ctx)
@@ -40,7 +41,8 @@ func noTestAdapter(t *testing.T) {
 
 		t.Run("Discovery", func(t *testing.T) {
 			// Of course, if there are no devices, this will run forever
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithTimeout(context.Background(),
+				10*time.Second)
 			ch, err := adapter.StartDiscovery()
 			assert.NoError(t, err, "Unexpected error in StartDiscovery()")
 			var chData ObjectChangedData

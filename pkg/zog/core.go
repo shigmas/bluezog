@@ -5,6 +5,7 @@ package zog
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/shigmas/bluezog/pkg/logger"
 	"github.com/shigmas/bluezog/pkg/protocol"
@@ -33,8 +34,7 @@ type (
 		bluez          protocol.Bluez
 		defaultAdapter *protocol.Adapter
 		cancelFunc     func()
-		devices        map[string]*protocol.Device
-		deviceRecvCh   protocol.DeviceReceiverCh
+		deviceRecvCh   protocol.ObjectChangedChan
 	}
 	// BusFunc declares the command interface to the shell
 	BusFunc func(Bus, ...interface{}) error
@@ -66,7 +66,7 @@ func NewBus(ctx context.Context) Bus {
 
 	b := BusImpl{
 		bluez:        bluez,
-		deviceRecvCh: make(protocol.DeviceReceiverCh, 3),
+		deviceRecvCh: make(protocol.ObjectChangedChan, 3),
 	}
 
 	return &b
@@ -97,9 +97,12 @@ func (b *BusImpl) GetInterface(...interface{}) error {
 // StartDiscovery : The order would be:
 // 3. on device, watch properties
 func (b *BusImpl) StartDiscovery(...interface{}) error {
-	b.devices = make(map[string]*protocol.Device)
 	go b.deviceReceiver()
-	b.defaultAdapter.StartDiscovery(b.deviceRecvCh)
+	var err error
+	b.deviceRecvCh, err = b.defaultAdapter.StartDiscovery()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -109,18 +112,36 @@ func (b *BusImpl) StopDiscovery(...interface{}) error {
 	return nil
 }
 
-// ConnectToDevice connects to the specified device
+// DeviceCommands provide the API to send commands to devices
 func (b *BusImpl) DeviceCommands(args ...interface{}) error {
-	if len(args) < 3 {
-		return fmt.Errorf("ConnectToDevice needs an address and command, and any additional arguments")
+	if len(args) < 2 {
+		return fmt.Errorf("ConnectToDevice needs an address and command, and any additional arguments. only %d args", len(args))
 	}
-	address, ok := args[0].(string)
+	addressArg, ok := args[0].(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert %s to string", args[0])
 	}
-	dev, ok := b.devices[address]
-	if !ok {
-		return fmt.Errorf("No device with path [%s]", address)
+
+	var device *protocol.Device
+	if index, err := strconv.Atoi(addressArg); err == nil {
+		devs := b.bluez.GetObjectsByInterface(protocol.BluezInterface.Device)
+		if len(devs)+1 < index {
+			return fmt.Errorf("Not enough devices (%d) in registry for index %d", len(devs),
+				index)
+		}
+		device, ok = devs[0].(*protocol.Device)
+		if !ok {
+			return fmt.Errorf("Internal error: Base not a device")
+		}
+	} else {
+		devs := b.bluez.FindObjects(addressArg, true)
+		if len(devs) == 0 {
+			return fmt.Errorf("No devices in registry with address %s", addressArg)
+		}
+		device, ok = devs[0].(*protocol.Device)
+		if !ok {
+			return fmt.Errorf("Internal error: Base not a device")
+		}
 	}
 
 	command, ok := args[1].(string)
@@ -130,9 +151,9 @@ func (b *BusImpl) DeviceCommands(args ...interface{}) error {
 
 	switch command {
 	case "connect":
-		err := dev.Connect()
+		err := device.Connect()
 		if err != nil {
-			return fmt.Errorf("Unable to connect to device %s: %s", address, err)
+			return fmt.Errorf("Unable to connect to device %s: %s", addressArg, err)
 		}
 	case "property":
 		if len(args) != 3 {
@@ -142,9 +163,9 @@ func (b *BusImpl) DeviceCommands(args ...interface{}) error {
 		if !ok {
 			return fmt.Errorf("Unable to %s to string", args[2])
 		}
-		prop, err := dev.FetchProperty(propName)
+		prop, err := device.FetchProperty(propName)
 		if err != nil {
-			return fmt.Errorf("Failed to get property [%s]: %s", err)
+			return fmt.Errorf("Failed to get property [%s]: %s", propName, err)
 		}
 		fmt.Printf("Property %s has value %s\n", propName, prop)
 	}
@@ -170,12 +191,9 @@ func (b *BusImpl) Test(args ...interface{}) error {
 }
 
 func (b *BusImpl) deviceReceiver() {
+	fmt.Printf("Waiting for devices...\n")
 	for d := range b.deviceRecvCh {
 		fmt.Printf("Received %s\n", d)
-		// b.devices[string(d.Path)] = &d
-		// prop, err := d.GetProperty(protocol.BluezDevice.AliasProp)
-		// if err == nil {
-		// 	fmt.Printf("Received: %s (%s)\n", d.Path, prop)
-		// }
 	}
+	fmt.Printf("Leaving deviceReceiver\n")
 }
