@@ -81,7 +81,7 @@ func Watch(conn *dbus.Conn, path dbus.ObjectPath, iface string, method string) e
 		dbus.WithMatchMember(method))
 }
 
-// Watch is a simplified version of AddMatchsignal
+// UnWatch is a simplified version of RemoveMatchsignal
 func UnWatch(conn *dbus.Conn, path dbus.ObjectPath, iface string, method string) error {
 	return conn.RemoveMatchSignal(
 		dbus.WithMatchObjectPath(path),

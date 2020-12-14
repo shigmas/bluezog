@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"reflect"
 	"strings"
 
 	//	"reflect"
@@ -56,6 +57,10 @@ type (
 	Bluez interface {
 		// FindAdapters that exist
 		FindAdapters() []*Adapter
+		GetObjectsByType(oType string) []Base
+		GetObjectsByInterface(interfaceName string) []Base
+		FindObjects(pattern string, firstOnly bool) []Base
+
 		// AddWatch will watch a path on the signals and will return a channel that we will use
 		// to communicate the data to the listener.
 		AddWatch(
@@ -109,6 +114,14 @@ func AddressToPath(parent string, address string) dbus.ObjectPath {
 	return dbus.ObjectPath(path.Join(parent, strings.ReplaceAll(address, ":", "_")))
 }
 
+func newObjectChangedData(path dbus.ObjectPath, obj Base, sigName string) ObjectChangedData {
+	return ObjectChangedData{
+		Path:   path,
+		Object: obj,
+		Signal: sigName,
+	}
+}
+
 // InitializeBluez creates a Bluez implementation
 func InitializeBluez(ctx context.Context) (Bluez, error) {
 	conn, err := dbus.SystemBus()
@@ -136,29 +149,35 @@ func InitializeBluez(ctx context.Context) (Bluez, error) {
 	}
 
 	for path, ifaceMap := range objMap {
-		// The ifaceMap is interface: data. We choose the first interface with data.
-		var newObj Base
-		for iface, data := range ifaceMap {
-			ctor, ok := typeRegistry[iface]
-			if len(data) > 0 && ok {
-				// no need to pass in the main interface type since that's keyed
-				// by the constructor
-				newObj = ctor(&bluezObj, path, ifaceMap)
-				break
-			}
-		}
+		newObj := bluezObj.createObject(path, ifaceMap)
 		if newObj == nil {
 			fmt.Printf("No interface constructor found: %s: %s\n", path, ifaceMap)
 		} else {
 			bluezObj.objectRegistry[path] = newObj
 		}
-
 	}
 
 	bluezObj.busConn.Signal(bluezObj.busSignalCh)
 	go bluezObj.handleSignals(ctx)
 
 	return &bluezObj, nil
+}
+
+func (b *bluezConn) createObject(path dbus.ObjectPath, data bus.ObjectMap) Base {
+	// The ifaceMap is interface: data. We choose the first interface with data.
+	var newObj Base
+	for iface := range data {
+		ctor, ok := typeRegistry[iface]
+		//if len(ifaceData) > 0 && ok {
+		if ok {
+			// no need to pass in the main interface type since that's keyed
+			// by the constructor
+			logger.Info("Creating object at path %s", path)
+			newObj = ctor(b, path, data)
+			break
+		}
+	}
+	return newObj
 }
 
 // XXX - this should just be AddWatch and takes a signal. We only pass back
@@ -196,23 +215,16 @@ func (b *bluezConn) RemoveWatch(
 	delete(b.signalWatchers, path)
 	close(ch)
 	for _, s := range signalNames {
+		// We should replace the channel in the map value with a slice, and
+		// remove the channel from the slice. When the slice is zero, we
+		// call the UnWatch. (It means, we need to store the interfaceName).
+		// But, this will do for now.
 		err := bus.UnWatch(b.busConn, bus.RootPath, interfaceName, s)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (b *bluezConn) GetObjectsByType(oType string) []Base {
-	objects := make([]Base, 0)
-	for _, v := range b.objectRegistry {
-		if v.GetBluezInterface() == oType {
-			objects = append(objects, v)
-		}
-	}
-	fmt.Printf("Found %d objects of type %s\n", len(objects), oType)
-	return objects
 }
 
 func (b *bluezConn) FindAdapters() []*Adapter {
@@ -230,6 +242,84 @@ func (b *bluezConn) FindAdapters() []*Adapter {
 	return adapters
 }
 
+func (b *bluezConn) GetObjectsByType(oType string) []Base {
+	objects := make([]Base, 0)
+	for _, v := range b.objectRegistry {
+		if v.GetBluezInterface() == oType {
+			objects = append(objects, v)
+		}
+	}
+	fmt.Printf("Found %d objects of type %s\n", len(objects), oType)
+	return objects
+}
+
+func (b *bluezConn) GetObjectsByInterface(interfaceName string) []Base {
+	results := make([]Base, 0)
+	for _, obj := range b.objectRegistry {
+		if strings.HasPrefix(interfaceName, BluezDest) {
+			if obj.GetBluezInterface() == interfaceName {
+				results = append(results, obj)
+			}
+		} else {
+			ifaces := obj.GetInterfaces()
+			for _, i := range ifaces {
+				if i == interfaceName {
+					results = append(results, obj)
+					break
+				}
+			}
+		}
+	}
+
+	return results
+}
+
+func (b *bluezConn) FindObjects(pattern string, firstOnly bool) []Base {
+	// If pattern is a regex, then it can match more than one
+	end := string(pattern[len(pattern)-1])
+	withoutEnd := string(pattern[:len(pattern)-1])
+	results := make([]Base, 0)
+	for path, obj := range b.objectRegistry {
+		if end == "*" && strings.HasPrefix(string(path), withoutEnd) {
+			results = append(results, obj)
+		} else {
+			if string(path) == pattern {
+				results = append(results, obj)
+				break
+			}
+		}
+	}
+
+	return results
+}
+
+// while it's just a slice of interfaces, it seems like the data is a slice of:
+// - the dbus.ObjectdPath,
+// - map of interfaces (string) to properties (map of property names to dbus.Variant), which we've
+//   typed to bus.ObjectMap
+// So, we'll go with this assumption, and throw and error if it's not, and record when it fails
+// our expectations and deal with them later.
+func (b *bluezConn) parseSignalBody(signalBody []interface{}) (dbus.ObjectPath, bus.ObjectMap, error) {
+	var path dbus.ObjectPath
+	var props bus.ObjectMap
+	for _, i := range signalBody {
+		p, ok := i.(dbus.ObjectPath)
+		if ok {
+			path = p
+			continue
+		}
+		m, ok := i.(map[string]map[string]dbus.Variant)
+		if ok {
+			props = m
+			continue
+		}
+		// If there are more than 2 items in the body, mark it as error so we can figure out what it is
+		return "", nil, fmt.Errorf("signal.Body contained unexpected type: %s", reflect.TypeOf(i))
+	}
+
+	return path, props, nil
+}
+
 // While this reads channel that is passed to dbus, any other gooutine can pass the
 // same data.
 func (b *bluezConn) handleSignals(ctx context.Context) {
@@ -237,12 +327,38 @@ func (b *bluezConn) handleSignals(ctx context.Context) {
 	for !cancelled {
 		select {
 		case sigData := <-b.busSignalCh:
-			logger.Info("Received: %s and %s", sigData.Name, sigData.Path)
-			obj, ok := b.objectRegistry[sigData.Path]
-			if ok {
-				obj.Update(sigData.Body)
+			logger.Info("Received: %s", sigData.Path)
+			path, data, err := b.parseSignalBody(sigData.Body)
+			if err != nil {
+				logger.Info("Signal Body unhandled: %s", err)
+				continue
 			}
-			// Actually, if it doesn't exist, we need to get the managed objects?
+			obj, ok := b.objectRegistry[path]
+			if ok {
+				logger.Info("Updating path %s", path)
+				obj.Update(data)
+			}
+			// Doesn't exist. Create the new object
+			logger.Info("Creating new path %s", path)
+			obj = b.createObject(path, data)
+			b.objectRegistry[path] = obj
+
+			// Now, forward this to anyone listening on this path.
+			// XXX - Since we allow patterns (well, just *), we need to iterate, which isn't so scalable.
+			sent := false
+			for p, listener := range b.signalWatchers {
+				end := string(p[len(p)-1])
+				withoutEnd := string(p[:len(p)-1])
+				if (end == "*" && strings.HasPrefix(string(path), withoutEnd)) || (p == path) {
+					listener <- newObjectChangedData(path, obj, sigData.Name)
+					logger.Info("Sent change on %s", path)
+					sent = true
+				}
+			}
+			if !sent {
+				logger.Info("No listeners for %s", path)
+				continue
+			}
 		case <-ctx.Done():
 			// the conn will close the channel, so don't do this
 			//close(b.busSignalCh)
