@@ -44,9 +44,13 @@ func (a *Adapter) StartDiscovery() (ObjectChangedChan, error) {
 	}
 
 	_, a.cancelDisc = context.WithCancel(context.Background())
-	ch, err := a.conn.AddWatch(a.Path+"*", bus.ObjectManager,
-		[]string{bus.ObjectManagerFuncs.InterfacesAdded,
-			bus.ObjectManagerFuncs.InterfacesRemoved})
+	ch, err := a.conn.AddWatch(a.Path,
+		[]InterfaceSignalPair{
+			InterfaceSignalPair{bus.ObjectManager,
+				bus.ObjectManagerFuncs.InterfacesAdded},
+			InterfaceSignalPair{bus.ObjectManager,
+				bus.ObjectManagerFuncs.InterfacesRemoved},
+		})
 	if err != nil {
 		a.cancelDisc()
 		return nil, err
@@ -58,17 +62,25 @@ func (a *Adapter) StartDiscovery() (ObjectChangedChan, error) {
 // StopDiscovery on the adapter. This will disable getting any information from the devices
 // connected through this adapter
 func (a *Adapter) StopDiscovery() error {
-	defer a.cancelDisc()
+	if a.discoveryCh == nil {
+		return fmt.Errorf("Discovery not started")
+	}
 	// Remove ourselves as watchers
-	a.conn.RemoveWatch(a.Path+"*", a.discoveryCh, bus.ObjectManager,
-		[]string{bus.ObjectManagerFuncs.InterfacesAdded,
-			bus.ObjectManagerFuncs.InterfacesRemoved})
+	a.conn.RemoveWatch(a.Path, a.discoveryCh,
+		[]InterfaceSignalPair{
+			InterfaceSignalPair{bus.ObjectManager,
+				bus.ObjectManagerFuncs.InterfacesAdded},
+			InterfaceSignalPair{bus.ObjectManager,
+				bus.ObjectManagerFuncs.InterfacesRemoved},
+		})
+	a.discoveryCh = nil
+	defer a.cancelDisc()
 
 	return bus.CallFunction(a.conn.busConn, BluezDest, a.Path, BluezAdapter.StopDiscovery)
 }
 
 // Connect to the device at the address. The address is of the form "HH:HH:HH:HH:HH:HH".
 func (a *Adapter) Connect(address string) error {
-	return bus.CallFunctionWithArgs(a.conn.busConn, BluezDest, a.Path, BluezAdapter.Connect, address)
+	return bus.CallFunctionWithArgs(nil, a.conn.busConn, BluezDest, a.Path, BluezAdapter.Connect, address)
 
 }

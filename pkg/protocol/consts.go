@@ -15,13 +15,20 @@ const (
 )
 
 type (
+	InterfaceSignalPair struct {
+		Interface  string
+		SignalName string
+	}
+
 	// These are internal classes to make it look like scoped constants. They are accessed
 	// as BluezInterface and BluezAdapter
 	bluezInterface struct {
-		Adapter        string
-		Device         string
-		AgentManager   string
-		MediaTransport string
+		Adapter            string
+		Device             string
+		AgentManager       string
+		MediaTransport     string
+		GATTService        string
+		GATTCharacteristic string
 	}
 
 	bluezAdapter struct {
@@ -34,7 +41,10 @@ type (
 
 	bluezDevice struct {
 		Connect              string
+		Disconnect           string
 		ConnectProfile       string
+		DisconnectProfile    string
+		Pair                 string
 		AddressProp          string
 		AddressTypeProp      string
 		BlockedProp          string
@@ -49,15 +59,33 @@ type (
 		RSSIProp             string
 		ServicesResolvedProp string
 	}
+
+	bluezGATTService struct {
+		UUIDProp     string
+		PrimaryProp  string
+		IncludesProp string
+		HandleProp   string
+	}
+
+	bluezGATTCharacteristic struct {
+		ReadValue  string
+		WriteValue string
+	}
+	bluezGATTDescriptor struct {
+		ReadValue  string
+		WriteValue string
+	}
 )
 
 var (
 	// BluezInterface is the constants for the base interface
 	BluezInterface = bluezInterface{
-		Adapter:        BluezDest + ".Adapter1",
-		Device:         BluezDest + ".Device1",
-		AgentManager:   BluezDest + ".AgentManager1",
-		MediaTransport: BluezDest + ".MediaTransport1",
+		Adapter:            BluezDest + ".Adapter1",
+		Device:             BluezDest + ".Device1",
+		AgentManager:       BluezDest + ".AgentManager1",
+		MediaTransport:     BluezDest + ".MediaTransport1",
+		GATTService:        BluezDest + ".GattService1",
+		GATTCharacteristic: BluezDest + ".GattCharacteristic1",
 	}
 
 	// BluezAdapter are the constants for the adapter
@@ -74,7 +102,10 @@ var (
 	// BluezDevice are the constants in the BluezInterface.Device interface
 	BluezDevice = bluezDevice{
 		Connect:              BluezInterface.Device + ".Connect",
+		Disconnect:           BluezInterface.Device + ".Disconnect",
 		ConnectProfile:       BluezInterface.Device + ".ConnectProfile",
+		DisconnectProfile:    BluezInterface.Device + ".DisconnectProfile",
+		Pair:                 BluezInterface.Device + ".Pair",
 		AddressProp:          "Address",
 		AddressTypeProp:      "AddressType",
 		BlockedProp:          "Blocked",
@@ -88,5 +119,22 @@ var (
 		LegacyPairingProp:    "LegacyPairing",
 		RSSIProp:             "RSSI",
 		ServicesResolvedProp: "ServicesResolved",
+	}
+
+	BluezGATTService = bluezGATTService{
+		UUIDProp:     "UUID",
+		PrimaryProp:  "Primary",
+		IncludesProp: "Includes",
+		HandleProp:   "Handle",
+	}
+
+	BluezGATTCharacteristic = bluezGATTCharacteristic{
+		ReadValue:  "ReadValue",
+		WriteValue: "WriteValue",
+	}
+
+	BluezGATTDescriptor = bluezGATTDescriptor{
+		ReadValue:  "ReadValue",
+		WriteValue: "WriteValue",
 	}
 )

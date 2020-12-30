@@ -12,6 +12,7 @@ type (
 	// Device is a bluetooth device associated with an adapter
 	Device struct {
 		BaseObject
+		discoveryCh ObjectChangedChan
 	}
 )
 
@@ -34,11 +35,39 @@ func newDevice(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *Devic
 
 // Connect to the device
 func (d *Device) Connect() error {
-	return bus.CallFunction(d.conn.busConn, BluezDest, d.Path, BluezDevice.Connect)
+	err := bus.CallFunction(d.conn.busConn, BluezDest, d.Path, BluezDevice.Connect)
+	if err != nil {
+		return err
+	}
+	d.discoveryCh, err = d.conn.AddWatch(d.Path,
+		[]InterfaceSignalPair{
+			InterfaceSignalPair{bus.Properties,
+				bus.PropertiesFuncs.PropertiesChanged},
+		})
+
+	return err
+}
+
+func (d *Device) Disconnect() error {
+	err := bus.CallFunction(d.conn.busConn, BluezDest, d.Path, BluezDevice.Disconnect)
+	if err != nil {
+		return err
+	}
+	d.discoveryCh, err = d.conn.AddWatch(d.Path,
+		[]InterfaceSignalPair{
+			InterfaceSignalPair{bus.Properties,
+				bus.PropertiesFuncs.PropertiesChanged},
+		})
+
+	return err
 }
 
 func (d *Device) ConnectProfile(uuid string) error {
-	return bus.CallFunctionWithArgs(d.conn.busConn, BluezDest, d.Path, BluezDevice.ConnectProfile, uuid)
+	return bus.CallFunctionWithArgs(nil, d.conn.busConn, BluezDest, d.Path, BluezDevice.ConnectProfile, uuid)
+}
+
+func (d *Device) DisconnectProfile(uuid string) error {
+	return bus.CallFunctionWithArgs(nil, d.conn.busConn, BluezDest, d.Path, BluezDevice.DisconnectProfile, uuid)
 }
 
 // GetProperty gets the property by key

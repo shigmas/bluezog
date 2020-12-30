@@ -26,10 +26,10 @@ func TestAdapter(t *testing.T) {
 		t.Run("AdapterGetAddress", func(t *testing.T) {
 			address, err := adapter.FetchProperty(BluezAdapter.AddressProp)
 			assert.NoError(t, err, "Unexpected error getting Address")
-			fmt.Println("Address: ", address)
+			fmt.Println("Adapter Address: ", address)
 			assert.NotEmpty(t, address, "Address was empty")
 			address = adapter.Property(BluezAdapter.AddressProp)
-			fmt.Println("Address: ", address)
+			fmt.Println("Adapter Address: ", address)
 			assert.NotEmpty(t, address, "Address was empty")
 		})
 		t.Run("AdapterGetAlias", func(t *testing.T) {

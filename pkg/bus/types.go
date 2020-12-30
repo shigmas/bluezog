@@ -55,6 +55,9 @@ type (
 		InterfacesRemoved string
 	}
 
+	propertiesFuncs struct {
+		PropertiesChanged string
+	}
 	introspectableFuncs struct {
 		Introspect string
 	}
@@ -71,6 +74,9 @@ var (
 		InterfacesRemoved: "InterfacesRemoved",
 	}
 
+	PropertiesFuncs = propertiesFuncs{
+		PropertiesChanged: Properties + ".PropertiesChanged",
+	}
 	// IntrospectableFuncs are the functdions provided on Introspectable
 	IntrospectableFuncs = introspectableFuncs{
 		Introspect: Introspectable + ".Introspect",
@@ -96,16 +102,16 @@ func (m *Method) String() string {
 }
 
 func (i *Interface) String() string {
-	s := "Interface: " + i.Name
-	for _, m := range i.Methods {
-		s += m.String()
-	}
+	s := "\nInterface: " + i.Name
+	// for _, m := range i.Methods {
+	// 	s += m.String()
+	// }
 	s += "\n"
 	return s
 }
 
 func (n *Node) String() string {
-	s := "Node: " + n.Name
+	s := "Node: " + n.Name + "\n"
 	for _, n := range n.Nodes {
 		s += n.String()
 	}

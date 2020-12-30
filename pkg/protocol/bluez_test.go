@@ -7,19 +7,38 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Since some tests need data from others, most tests are here. The ones that can be
-// isolated are in other test files
-func TestBluez(t *testing.T) {
+func createBluez(t *testing.T) (Bluez, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	bluez, err := InitializeBluez(ctx)
 	assert.NoError(t, err, "Unexpected error initializing adapter")
 	assert.NotNil(t, bluez, "Unable to initialize bluez")
 
+	return bluez, cancel
+}
+
+// Since some tests need data from others, most tests are here. The ones that can be
+// isolated are in other test files
+func TestBluez(t *testing.T) {
+	bluez, cancel := createBluez(t)
+	defer cancel()
+
 	t.Run("FindAdapter", func(t *testing.T) {
 		adapters := bluez.FindAdapters()
-		assert.NoError(t, err, "Unexpected error finding adapters")
 		assert.GreaterOrEqual(t, len(adapters), 1)
+	})
+
+}
+
+func TestBluezStartStop(t *testing.T) {
+	bluez, cancel := createBluez(t)
+	defer cancel()
+
+	t.Run("FindAdapter", func(t *testing.T) {
+		ch, err := bluez.AddWatch("/foo/bar", []InterfaceSignalPair{InterfaceSignalPair{"org.bluez.interface", "PropertiesChanged"}})
+		assert.NoError(t, err, "Unexpected error AddWatch")
+		assert.NotNil(t, ch, "Channel is nil")
+		err = bluez.RemoveWatch("/foo/bar", ch, []InterfaceSignalPair{InterfaceSignalPair{"org.bluez.interface", "PropertiesChanged"}})
+		assert.NoError(t, err, "Unexpected error RemoveWatch")
 	})
 
 }
