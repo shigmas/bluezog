@@ -55,18 +55,28 @@ type (
 	// done through the adapter. (The other objects will interact directly with the
 	// implementation of this interface.)
 	Bluez interface {
-		// FindAdapters that exist
+		// FindAdapters thcat exist
 		FindAdapters() []*Adapter
 		GetObjectsByType(oType string) []Base
+
+		IntrospectPath(path string) (*bus.Node, error)
+		GetManagedObjects(path string) (map[dbus.ObjectPath]bus.ObjectMap, error)
+
+		// These return the objects if they the interface named interfaceName or
+		// all the objects. Likewise, if property is empty, all the objects. If the
+		// property is not empty, we will return all objects with the property. If the
+		// value is not nil, we will return the objects that match the property *and*
+		// value
 		GetObjectsByInterface(interfaceName string) []Base
+		GetObjectsByProperty(property string, value interface{}) []Base
 		FindObjects(pattern string, firstOnly bool) []Base
+		//IntrospectObject()
 
 		// AddWatch will watch a path on the signals and will return a channel that we will use
 		// to communicate the data to the listener.
 		AddWatch(
 			path dbus.ObjectPath,
-			interfaceName string,
-			signalNames []string) (ObjectChangedChan, error)
+			signalMap []InterfaceSignalPair) (ObjectChangedChan, error)
 		// RemoveWatch will remove listener on the path.
 		// XXX: Implementation hole: We won't actually remove the watch. But no one will be
 		// notified because no one is listening. We should reference count the signals, and stop
@@ -74,8 +84,7 @@ type (
 		RemoveWatch(
 			path dbus.ObjectPath,
 			ch ObjectChangedChan,
-			interfaceName string,
-			signalNames []string) error
+			signalMap []InterfaceSignalPair) error
 	}
 
 	// Three purposes:
@@ -129,7 +138,7 @@ func InitializeBluez(ctx context.Context) (Bluez, error) {
 		return nil, err
 	}
 
-	node, err := bus.GetObject(conn, BluezDest, BluezRootPath)
+	node, err := bus.IntrospectObject(conn, BluezDest, BluezRootPath)
 	if err != nil {
 		return nil, err
 	}
@@ -187,17 +196,17 @@ func (b *bluezConn) createObject(path dbus.ObjectPath, data bus.ObjectMap) Base 
 // For expanding, we parse sig into object and signal.
 func (b *bluezConn) AddWatch(
 	path dbus.ObjectPath,
-	interfaceName string,
-	signalNames []string) (ObjectChangedChan, error) {
+	signalMap []InterfaceSignalPair) (ObjectChangedChan, error) {
 
-	for _, s := range signalNames {
-		err := bus.Watch(b.busConn, bus.RootPath, interfaceName, s)
+	for _, pair := range signalMap {
+		err := bus.Watch(b.busConn, bus.RootPath, pair.Interface, pair.SignalName)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	ch := make(ObjectChangedChan)
+	logger.Info("AddWatch %s", path)
 	b.signalWatchers[path] = ch
 
 	return ch, nil
@@ -206,20 +215,21 @@ func (b *bluezConn) AddWatch(
 func (b *bluezConn) RemoveWatch(
 	path dbus.ObjectPath,
 	ch ObjectChangedChan,
-	interfaceName string,
-	signalNames []string) error {
+	signalMap []InterfaceSignalPair) error {
 	ch, ok := b.signalWatchers[path]
 	if !ok {
 		return fmt.Errorf("No channel found for %s", path)
 	}
 	delete(b.signalWatchers, path)
 	close(ch)
-	for _, s := range signalNames {
+	logger.Info("RemoveWatch %s", path)
+	b.signalWatchers[path] = nil
+	for _, pair := range signalMap {
 		// We should replace the channel in the map value with a slice, and
 		// remove the channel from the slice. When the slice is zero, we
 		// call the UnWatch. (It means, we need to store the interfaceName).
 		// But, this will do for now.
-		err := bus.UnWatch(b.busConn, bus.RootPath, interfaceName, s)
+		err := bus.UnWatch(b.busConn, bus.RootPath, pair.Interface, pair.SignalName)
 		if err != nil {
 			return err
 		}
@@ -242,6 +252,14 @@ func (b *bluezConn) FindAdapters() []*Adapter {
 	return adapters
 }
 
+func (b *bluezConn) IntrospectPath(path string) (*bus.Node, error) {
+	return bus.IntrospectObject(b.busConn, BluezDest, dbus.ObjectPath(path))
+}
+
+func (b *bluezConn) GetManagedObjects(path string) (map[dbus.ObjectPath]bus.ObjectMap, error) {
+	return bus.GetManagedObjects(b.busConn, BluezDest, dbus.ObjectPath(path))
+}
+
 func (b *bluezConn) GetObjectsByType(oType string) []Base {
 	objects := make([]Base, 0)
 	for _, v := range b.objectRegistry {
@@ -256,16 +274,31 @@ func (b *bluezConn) GetObjectsByType(oType string) []Base {
 func (b *bluezConn) GetObjectsByInterface(interfaceName string) []Base {
 	results := make([]Base, 0)
 	for _, obj := range b.objectRegistry {
-		if strings.HasPrefix(interfaceName, BluezDest) {
-			if obj.GetBluezInterface() == interfaceName {
+		ifaces := obj.GetInterfaces()
+		for _, i := range ifaces {
+			if interfaceName != "" || i == interfaceName {
 				results = append(results, obj)
+				break
 			}
+		}
+	}
+
+	return results
+}
+
+func (b *bluezConn) GetObjectsByProperty(property string, value interface{}) []Base {
+	results := make([]Base, 0)
+	for _, obj := range b.objectRegistry {
+		if property == "" {
+			results = append(results, obj)
 		} else {
-			ifaces := obj.GetInterfaces()
-			for _, i := range ifaces {
-				if i == interfaceName {
-					results = append(results, obj)
-					break
+			props := obj.AllProperties()
+			for k, v := range props {
+				if k == property {
+					if value == nil || v == value {
+						results = append(results, obj)
+						break
+					}
 				}
 			}
 		}
@@ -314,7 +347,7 @@ func (b *bluezConn) parseSignalBody(signalBody []interface{}) (dbus.ObjectPath, 
 			continue
 		}
 		// If there are more than 2 items in the body, mark it as error so we can figure out what it is
-		return "", nil, fmt.Errorf("signal.Body contained unexpected type: %s", reflect.TypeOf(i))
+		return "", nil, fmt.Errorf("signal.Body contained unexpected type: %s [%s]", reflect.TypeOf(i), i)
 	}
 
 	return path, props, nil
@@ -347,11 +380,15 @@ func (b *bluezConn) handleSignals(ctx context.Context) {
 			// XXX - Since we allow patterns (well, just *), we need to iterate, which isn't so scalable.
 			sent := false
 			for p, listener := range b.signalWatchers {
+				if listener == nil {
+					logger.Info("nil listener")
+					continue
+				}
 				end := string(p[len(p)-1])
 				withoutEnd := string(p[:len(p)-1])
 				if (end == "*" && strings.HasPrefix(string(path), withoutEnd)) || (p == path) {
+					logger.Info("Sending change on %s", p)
 					listener <- newObjectChangedData(path, obj, sigData.Name)
-					logger.Info("Sent change on %s", path)
 					sent = true
 				}
 			}

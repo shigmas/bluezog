@@ -16,7 +16,7 @@ import (
 )
 
 // GetObject fetches the introspection information for the object
-func GetObject(conn *dbus.Conn, dest string, objPath dbus.ObjectPath) (*Node, error) {
+func IntrospectObject(conn *dbus.Conn, dest string, objPath dbus.ObjectPath) (*Node, error) {
 	var s string
 	err := conn.Object(dest, objPath).Call(IntrospectableFuncs.Introspect, 0).Store(&s)
 	if err != nil {
@@ -67,9 +67,14 @@ func CallFunction(conn *dbus.Conn, dest string, objPath dbus.ObjectPath, funcNam
 }
 
 // CallFunctionWithArgs is simply CallFunction with arbitrary arguments
-func CallFunctionWithArgs(conn *dbus.Conn, dest string, objPath dbus.ObjectPath, funcName string,
+func CallFunctionWithArgs(
+	retVal interface{},
+	conn *dbus.Conn,
+	dest string,
+	objPath dbus.ObjectPath,
+	funcName string,
 	args ...interface{}) error {
-	err := conn.Object(dest, objPath).Call(funcName, 0, args...).Store()
+	err := conn.Object(dest, objPath).Call(funcName, 0, args...).Store(retVal)
 	return err
 }
 

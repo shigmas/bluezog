@@ -1,0 +1,31 @@
+package protocol
+
+import (
+	"fmt"
+
+	"github.com/godbus/dbus/v5"
+	"github.com/shigmas/bluezog/pkg/bus"
+)
+
+type (
+	// GattService is a bluetooth device associated with a GATT Service. This is
+	// the parent of the GattCharacteristic in the hierarchy
+	GattService struct {
+		BaseObject
+	}
+)
+
+func init() {
+	typeRegistry[BluezInterface.GATTService] = func(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) Base {
+		return newGattService(conn, name, data)
+
+	}
+
+}
+
+func newGattService(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *GattService {
+	fmt.Println("Creating ", BluezInterface.GATTService)
+	return &GattService{
+		BaseObject: *newBaseObject(conn, name, BluezInterface.GATTService, data),
+	}
+}

@@ -5,7 +5,7 @@ package zog
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"path/filepath"
 
 	"github.com/shigmas/bluezog/pkg/logger"
 	"github.com/shigmas/bluezog/pkg/protocol"
@@ -21,10 +21,16 @@ type (
 		// StopDiscovery stops discovery
 		StopDiscovery(...interface{}) error
 		// DeviceCommands provides API to the device
-		DeviceCommands(...interface{}) error
+		ObjectCommands(...interface{}) error
+		// Gatt handles GATT api requests
+		Gatt(...interface{}) error
 		// Close the connection to the bus
 		Close(...interface{}) error
-
+		// List objects. Can pass a property that we're looking for. Only objects that have that
+		// property will be listed, with that property
+		List(...interface{}) error
+		// Filter is kind of like List, but takes more arguments?
+		Filter(...interface{}) error
 		// Test
 		Test(...interface{}) error
 	}
@@ -49,9 +55,12 @@ func init() {
 	// These should be command sets. And some commands in the sets will set the command set.
 	BusCommand["close"] = (Bus).Close
 	BusCommand["adapter"] = (Bus).GetInterface
-	BusCommand["discover"] = (Bus).StartDiscovery
+	BusCommand["start"] = (Bus).StartDiscovery
 	BusCommand["stop"] = (Bus).StopDiscovery
-	BusCommand["device"] = (Bus).DeviceCommands
+	BusCommand["object"] = (Bus).ObjectCommands
+	BusCommand["list"] = (Bus).List
+	BusCommand["filter"] = (Bus).Filter
+	BusCommand["gatt"] = (Bus).Gatt
 	BusCommand["test"] = (Bus).Test
 }
 
@@ -112,46 +121,80 @@ func (b *BusImpl) StopDiscovery(...interface{}) error {
 	return nil
 }
 
-// DeviceCommands provide the API to send commands to devices
-func (b *BusImpl) DeviceCommands(args ...interface{}) error {
+// ObjectCommands provide the API to send commands to devices
+func (b *BusImpl) ObjectCommands(args ...interface{}) error {
+	// device /org/bluez/hci0/dev_FE_CD_66_43_D8_9E connect 00001800-0000-1000-8000-00805f9b34fb 00001801-0000-1000-8000-00805f9b34fb
 	if len(args) < 2 {
-		return fmt.Errorf("ConnectToDevice needs an address and command, and any additional arguments. only %d args", len(args))
+		return fmt.Errorf("ConnectToDevice needs an address and a command, and any additional arguments. only %d args", len(args))
 	}
 	addressArg, ok := args[0].(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert %s to string", args[0])
 	}
-
-	var device *protocol.Device
-	if index, err := strconv.Atoi(addressArg); err == nil {
-		devs := b.bluez.GetObjectsByInterface(protocol.BluezInterface.Device)
-		if len(devs)+1 < index {
-			return fmt.Errorf("Not enough devices (%d) in registry for index %d", len(devs),
-				index)
-		}
-		device, ok = devs[0].(*protocol.Device)
-		if !ok {
-			return fmt.Errorf("Internal error: Base not a device")
-		}
-	} else {
-		devs := b.bluez.FindObjects(addressArg, true)
-		if len(devs) == 0 {
-			return fmt.Errorf("No devices in registry with address %s", addressArg)
-		}
-		device, ok = devs[0].(*protocol.Device)
-		if !ok {
-			return fmt.Errorf("Internal error: Base not a device")
-		}
-	}
-
 	command, ok := args[1].(string)
 	if !ok {
-		return fmt.Errorf("Unable to convert %s to string", args[1])
+		return fmt.Errorf("Unable to convert %s to string", args[2])
+	}
+
+	objs := b.bluez.FindObjects(addressArg, true)
+	if len(objs) == 0 {
+		return fmt.Errorf("No devices in registry with address %s", addressArg)
+	}
+	base := objs[0]
+	device, ok := base.(*protocol.Device)
+	if !ok && (command == "connect" || command == "disconnect") {
+		return fmt.Errorf("Base is not a Device")
 	}
 
 	switch command {
+	case "dump":
+		fmt.Printf("Path: %s\n", base.GetPath())
+		props := base.AllProperties()
+		for k, variant := range props {
+			fmt.Printf("%s: %s\n", k, variant.Value())
+		}
+	case "introspect":
+		node, err := b.bluez.IntrospectPath(addressArg)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Tree: %s\n", node)
+	case "children":
+		managed, err := b.bluez.GetManagedObjects(addressArg)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("children: %s\n", managed)
+
 	case "connect":
-		err := device.Connect()
+		// device /org/bluez/hci0/dev_D7_57_C6_C2_0B_FA connect
+		var err error
+		if len(args) == 3 {
+			uuid, ok := args[2].(string)
+			if !ok {
+				return fmt.Errorf("Unable to convert %s to string", args[2])
+			}
+			err = device.ConnectProfile(uuid)
+			fmt.Println("ConnectProfile")
+		} else {
+			err = device.Connect()
+		}
+		if err != nil {
+			return fmt.Errorf("Unable to connect to device %s: %s", addressArg, err)
+		}
+	case "disconnect":
+		// device /org/bluez/hci0/dev_D7_57_C6_C2_0B_FA disconnect
+		var err error
+		if len(args) == 3 {
+			uuid, ok := args[2].(string)
+			if !ok {
+				return fmt.Errorf("Unable to convert %s to string", args[2])
+			}
+			err = device.DisconnectProfile(uuid)
+			fmt.Println("ConnectProfile")
+		} else {
+			err = device.Disconnect()
+		}
 		if err != nil {
 			return fmt.Errorf("Unable to connect to device %s: %s", addressArg, err)
 		}
@@ -170,6 +213,102 @@ func (b *BusImpl) DeviceCommands(args ...interface{}) error {
 		fmt.Printf("Property %s has value %s\n", propName, prop)
 	}
 
+	return nil
+}
+
+func (b *BusImpl) Gatt(args ...interface{}) error {
+	if len(args) != 1 {
+		return fmt.Errorf("gatt needs an address")
+	}
+	addressArg, ok := args[0].(string)
+	if !ok {
+		return fmt.Errorf("Unable to convert %s to string", args[0])
+	}
+	parts := filepath.SplitList(addressArg)
+	objs := b.bluez.FindObjects(addressArg, true)
+	if len(objs) == 0 {
+		return fmt.Errorf("No devices in registry with address %s", addressArg)
+	}
+	base := objs[0]
+
+	// A GATT paths
+	// Service:
+	// /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4/service001f
+	// Characteristic:
+	// /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4/service001f/char0022
+	// and a Descriptor:
+	// /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4/service001f/char0022/desc0024
+	if len(parts) == 5 {
+		service, ok := base.(*protocol.GattService)
+		if !ok {
+			return fmt.Errorf("Path appeared to a GATT Service, but not convertible")
+		}
+		fmt.Println(service)
+	} else if len(parts) == 6 {
+		characteristic, ok := base.(*protocol.GattCharacteristic)
+		if !ok {
+			return fmt.Errorf("Path appeared to a GATT Characteristic, but not convertible")
+		}
+		val, err := characteristic.ReadValue(0)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Char: %s\n", val)
+	} else if len(parts) == 7 {
+		return fmt.Errorf("Path appeared to a GATT Descriptor, but not implemented")
+	} else {
+		return fmt.Errorf("Not a GATT path")
+	}
+
+	return nil
+}
+
+// List some properties
+func (b *BusImpl) List(args ...interface{}) error {
+	var ok bool
+	if len(args) < 1 {
+		return fmt.Errorf("[interface] or [property] is required")
+	}
+
+	name := ""
+	var value interface{}
+	if len(args) >= 2 {
+		name, ok = args[1].(string)
+		if !ok {
+			return fmt.Errorf("interface or property argument was not a string")
+		}
+	}
+	if len(args) >= 3 {
+		value = args[2]
+	}
+
+	var devices []protocol.Base
+	propSearch := false
+	if args[0] == "interface" {
+		devices = b.bluez.GetObjectsByInterface(name)
+	} else if args[0] == "property" {
+		propSearch = true
+		devices = b.bluez.GetObjectsByProperty(name, value)
+	} else {
+		fmt.Printf("Unrecognized parameter [%d]\n", args[0])
+	}
+
+	fmt.Printf("Found %d objects\n", len(devices))
+	for _, d := range devices {
+		fmt.Printf("Path: %s\n", d.GetPath())
+		if propSearch && name != "" {
+			fmt.Printf("%s: %s\n", name, d.Property(name))
+		} else {
+			props := d.AllProperties()
+			for k, variant := range props {
+				fmt.Printf("%s: %s\n", k, variant.Value())
+			}
+		}
+	}
+	return nil
+}
+
+func (b *BusImpl) Filter(args ...interface{}) error {
 	return nil
 }
 

@@ -15,6 +15,7 @@ type (
 		// implementation's property. Concrete implementations can use this to provide
 		// typed accessors.
 		Property(propName string) interface{}
+		AllProperties() map[string]dbus.Variant
 		// Typically, calls through to dbus to get the property
 		FetchProperty(propName string) (interface{}, error)
 		// In GetManagedObjects, the data has several interfaces, but only one is populated (so far).
@@ -53,10 +54,16 @@ func newBaseObject(
 	if !ok {
 		return nil
 	}
+
+	iFaces := make([]string, 0)
+	for i, _ := range data {
+		iFaces = append(iFaces, i)
+	}
 	return &BaseObject{
 		conn:       conn,
 		Path:       name,
 		childType:  mainInterface,
+		interfaces: iFaces,
 		properties: props,
 	}
 }
@@ -86,6 +93,10 @@ func (b *BaseObject) Property(propName string) interface{} {
 	}
 
 	return prop.Value()
+}
+
+func (b *BaseObject) AllProperties() map[string]dbus.Variant {
+	return b.properties
 }
 
 // FetchProperty for a type. Uses the childType member

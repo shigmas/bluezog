@@ -21,13 +21,13 @@ func TestObject(t *testing.T) {
 
 	t.Run("GetObject", func(t *testing.T) {
 		t.Run("Failure", func(t *testing.T) {
-			node, err := GetObject(conn, badDest, noPath)
+			node, err := IntrospectObject(conn, badDest, noPath)
 			assert.Error(t, err, "Expected error for service %s and path %s: err: %s",
 				badDest, noPath, err)
 			assert.Nil(t, node)
 		})
 		t.Run("Success", func(t *testing.T) {
-			node, err := GetObject(conn, objDest, objPath)
+			node, err := IntrospectObject(conn, objDest, objPath)
 			assert.NoError(t, err, "Error for service %s and path %s: err: %s",
 				objDest, objPath, err)
 			assert.NotNil(t, node)
