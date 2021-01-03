@@ -5,8 +5,10 @@ package zog
 import (
 	"context"
 	"fmt"
-	"path/filepath"
+	"strings"
+	"sync"
 
+	"github.com/shigmas/bluezog/pkg/base"
 	"github.com/shigmas/bluezog/pkg/logger"
 	"github.com/shigmas/bluezog/pkg/protocol"
 )
@@ -41,6 +43,7 @@ type (
 		defaultAdapter *protocol.Adapter
 		cancelFunc     func()
 		deviceRecvCh   protocol.ObjectChangedChan
+		rwMux          sync.RWMutex
 	}
 	// BusFunc declares the command interface to the shell
 	BusFunc func(Bus, ...interface{}) error
@@ -65,9 +68,9 @@ func init() {
 }
 
 // NewBus creates a new bus
-func NewBus(ctx context.Context) Bus {
+func NewBus(ctx context.Context, ops base.Operations) Bus {
 	fmt.Println("Initializing Bluez")
-	bluez, err := protocol.InitializeBluez(ctx)
+	bluez, err := protocol.InitializeBluez(ctx, ops)
 
 	if err != nil {
 		return nil
@@ -104,11 +107,15 @@ func (b *BusImpl) GetInterface(...interface{}) error {
 }
 
 // StartDiscovery : The order would be:
-// 3. on device, watch properties
+// 1. get the adapter
+// 2. start discovery
+// 3. stop (when done)
 func (b *BusImpl) StartDiscovery(...interface{}) error {
 	go b.deviceReceiver()
 	var err error
+	b.rwMux.Lock()
 	b.deviceRecvCh, err = b.defaultAdapter.StartDiscovery()
+	b.rwMux.Unlock()
 	if err != nil {
 		return err
 	}
@@ -216,6 +223,7 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 	return nil
 }
 
+// Gatt provides access to the GATT functionality
 func (b *BusImpl) Gatt(args ...interface{}) error {
 	if len(args) != 1 {
 		return fmt.Errorf("gatt needs an address")
@@ -224,7 +232,7 @@ func (b *BusImpl) Gatt(args ...interface{}) error {
 	if !ok {
 		return fmt.Errorf("Unable to convert %s to string", args[0])
 	}
-	parts := filepath.SplitList(addressArg)
+	parts := strings.Split(addressArg, "/")
 	objs := b.bluez.FindObjects(addressArg, true)
 	if len(objs) == 0 {
 		return fmt.Errorf("No devices in registry with address %s", addressArg)
@@ -238,13 +246,13 @@ func (b *BusImpl) Gatt(args ...interface{}) error {
 	// /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4/service001f/char0022
 	// and a Descriptor:
 	// /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4/service001f/char0022/desc0024
-	if len(parts) == 5 {
+	if len(parts) == 6 { // the empty space before the / is included
 		service, ok := base.(*protocol.GattService)
 		if !ok {
 			return fmt.Errorf("Path appeared to a GATT Service, but not convertible")
 		}
 		fmt.Println(service)
-	} else if len(parts) == 6 {
+	} else if len(parts) == 7 {
 		characteristic, ok := base.(*protocol.GattCharacteristic)
 		if !ok {
 			return fmt.Errorf("Path appeared to a GATT Characteristic, but not convertible")
@@ -254,7 +262,7 @@ func (b *BusImpl) Gatt(args ...interface{}) error {
 			return err
 		}
 		fmt.Printf("Char: %s\n", val)
-	} else if len(parts) == 7 {
+	} else if len(parts) == 8 {
 		return fmt.Errorf("Path appeared to a GATT Descriptor, but not implemented")
 	} else {
 		return fmt.Errorf("Not a GATT path")
@@ -308,6 +316,7 @@ func (b *BusImpl) List(args ...interface{}) error {
 	return nil
 }
 
+// Filter doesn't do anything
 func (b *BusImpl) Filter(args ...interface{}) error {
 	return nil
 }
@@ -331,8 +340,10 @@ func (b *BusImpl) Test(args ...interface{}) error {
 
 func (b *BusImpl) deviceReceiver() {
 	fmt.Printf("Waiting for devices...\n")
+	b.rwMux.RLock()
 	for d := range b.deviceRecvCh {
 		fmt.Printf("Received %s\n", d)
 	}
+	b.rwMux.RUnlock()
 	fmt.Printf("Leaving deviceReceiver\n")
 }

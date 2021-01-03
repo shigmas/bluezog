@@ -15,8 +15,11 @@ const (
 )
 
 type (
+	// InterfaceSignalPair is the paramter type (as a slicle) for the Add/RemoveWatch functions
 	InterfaceSignalPair struct {
-		Interface  string
+		// Interface is the interface name providing the signal
+		Interface string
+		// SignalName is the signal we want to watch
 		SignalName string
 	}
 
@@ -121,6 +124,7 @@ var (
 		ServicesResolvedProp: "ServicesResolved",
 	}
 
+	// BluezGATTService are the constants for the GATT service
 	BluezGATTService = bluezGATTService{
 		UUIDProp:     "UUID",
 		PrimaryProp:  "Primary",
@@ -128,11 +132,13 @@ var (
 		HandleProp:   "Handle",
 	}
 
+	// BluezGATTCharacteristic are the constants for the GATT characteristic
 	BluezGATTCharacteristic = bluezGATTCharacteristic{
 		ReadValue:  "ReadValue",
 		WriteValue: "WriteValue",
 	}
 
+	// BluezGATTDescriptor are the constants for the GATT descriptor
 	BluezGATTDescriptor = bluezGATTDescriptor{
 		ReadValue:  "ReadValue",
 		WriteValue: "WriteValue",

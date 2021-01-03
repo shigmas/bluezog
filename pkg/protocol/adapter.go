@@ -1,11 +1,12 @@
 package protocol
 
 import (
-	"context"
+	//"context"
 	"fmt"
 	"sync"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/shigmas/bluezog/pkg/base"
 	"github.com/shigmas/bluezog/pkg/bus"
 	//	"github.com/shigmas/bluezog/pkg/logger"
 )
@@ -14,6 +15,10 @@ type (
 	// Adapter is a bluetooth adapter representation
 	Adapter struct {
 		BaseObject
+		// This channel is currently passed back to the client, which should have
+		// a goroutine to read it, receiving the new Object. But, for
+		// experimentation/figuring things out, we pass this back in
+		// StartDiscovery.
 		discoveryCh  ObjectChangedChan
 		cancelDisc   func()
 		discoveryMux sync.Mutex
@@ -21,14 +26,14 @@ type (
 )
 
 func init() {
-	typeRegistry[BluezInterface.Adapter] = func(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) Base {
+	typeRegistry[BluezInterface.Adapter] = func(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) Base {
 		// need to fix the constructor
 		return newAdapter(conn, name, data)
 	}
 
 }
 
-func newAdapter(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *Adapter {
+func newAdapter(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) *Adapter {
 	return &Adapter{
 		BaseObject: *newBaseObject(conn, name, BluezInterface.Adapter, data),
 	}
@@ -38,25 +43,25 @@ func newAdapter(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *Adap
 func (a *Adapter) StartDiscovery() (ObjectChangedChan, error) {
 	a.discoveryMux.Lock()
 	defer a.discoveryMux.Unlock()
-	if a.cancelDisc != nil {
+	if a.discoveryCh != nil {
 		// We can't start discovery if it's already started.
 		return nil, fmt.Errorf("Discovery already started")
 	}
 
-	_, a.cancelDisc = context.WithCancel(context.Background())
-	ch, err := a.conn.AddWatch(a.Path,
+	//_, a.cancelDisc = context.WithCancel(context.Background())
+	ch, err := a.bluez.AddWatch(a.Path,
 		[]InterfaceSignalPair{
-			InterfaceSignalPair{bus.ObjectManager,
+			{bus.ObjectManager,
 				bus.ObjectManagerFuncs.InterfacesAdded},
-			InterfaceSignalPair{bus.ObjectManager,
+			{bus.ObjectManager,
 				bus.ObjectManagerFuncs.InterfacesRemoved},
 		})
 	if err != nil {
-		a.cancelDisc()
+		//a.cancelDisc()
 		return nil, err
 	}
 	a.discoveryCh = ch
-	return ch, bus.CallFunction(a.conn.busConn, BluezDest, a.Path, BluezAdapter.StartDiscovery)
+	return ch, a.bluez.ops.CallFunction(BluezDest, a.Path, BluezAdapter.StartDiscovery)
 }
 
 // StopDiscovery on the adapter. This will disable getting any information from the devices
@@ -65,22 +70,17 @@ func (a *Adapter) StopDiscovery() error {
 	if a.discoveryCh == nil {
 		return fmt.Errorf("Discovery not started")
 	}
-	// Remove ourselves as watchers
-	a.conn.RemoveWatch(a.Path, a.discoveryCh,
+	// Remove ourselves as watchers. AddWatch created the channel, so it will
+	// close the channel.
+	a.bluez.RemoveWatch(a.Path, a.discoveryCh,
 		[]InterfaceSignalPair{
-			InterfaceSignalPair{bus.ObjectManager,
+			{bus.ObjectManager,
 				bus.ObjectManagerFuncs.InterfacesAdded},
-			InterfaceSignalPair{bus.ObjectManager,
+			{bus.ObjectManager,
 				bus.ObjectManagerFuncs.InterfacesRemoved},
 		})
 	a.discoveryCh = nil
-	defer a.cancelDisc()
+	//defer a.cancelDisc()
 
-	return bus.CallFunction(a.conn.busConn, BluezDest, a.Path, BluezAdapter.StopDiscovery)
-}
-
-// Connect to the device at the address. The address is of the form "HH:HH:HH:HH:HH:HH".
-func (a *Adapter) Connect(address string) error {
-	return bus.CallFunctionWithArgs(nil, a.conn.busConn, BluezDest, a.Path, BluezAdapter.Connect, address)
-
+	return a.bluez.ops.CallFunction(BluezDest, a.Path, BluezAdapter.StopDiscovery)
 }

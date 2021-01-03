@@ -6,12 +6,15 @@ import (
 	"path"
 	"reflect"
 	"strings"
+	"sync"
 
 	//	"reflect"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/shigmas/bluezog/pkg/base"
 	"github.com/shigmas/bluezog/pkg/bus"
 	"github.com/shigmas/bluezog/pkg/logger"
+	"github.com/shigmas/bluezog/test"
 )
 
 var (
@@ -59,8 +62,8 @@ type (
 		FindAdapters() []*Adapter
 		GetObjectsByType(oType string) []Base
 
-		IntrospectPath(path string) (*bus.Node, error)
-		GetManagedObjects(path string) (map[dbus.ObjectPath]bus.ObjectMap, error)
+		IntrospectPath(path string) (*base.Node, error)
+		GetManagedObjects(path string) (map[dbus.ObjectPath]base.ObjectMap, error)
 
 		// These return the objects if they the interface named interfaceName or
 		// all the objects. Likewise, if property is empty, all the objects. If the
@@ -98,18 +101,19 @@ type (
 	//   just hold the root node. I think this is more dbus-ish anyway.
 	// This is an implementation of the Bluez interface.
 	bluezConn struct {
-		busConn *dbus.Conn
+		ops base.Operations
 		// Objects on this bus. ObjectMap are the interfaces that each
 		// object implements.
-		root *bus.Node
+		root *base.Node
 		// Objects known to this connection.
 		objectRegistry map[dbus.ObjectPath]Base
 		busSignalCh    chan *dbus.Signal
 		// Should be a map to slice
 		signalWatchers map[dbus.ObjectPath]ObjectChangedChan
+		rwMux          sync.RWMutex
 	}
 
-	typeConstructorFn func(*bluezConn, dbus.ObjectPath, bus.ObjectMap) Base
+	typeConstructorFn func(*bluezConn, dbus.ObjectPath, base.ObjectMap) Base
 )
 
 var _ Bluez = (*bluezConn)(nil)
@@ -132,25 +136,20 @@ func newObjectChangedData(path dbus.ObjectPath, obj Base, sigName string) Object
 }
 
 // InitializeBluez creates a Bluez implementation
-func InitializeBluez(ctx context.Context) (Bluez, error) {
-	conn, err := dbus.SystemBus()
-	if err != nil {
-		return nil, err
-	}
-
-	node, err := bus.IntrospectObject(conn, BluezDest, BluezRootPath)
+func InitializeBluez(ctx context.Context, ops base.Operations) (Bluez, error) {
+	node, err := ops.IntrospectObject(BluezDest, BluezRootPath)
 	if err != nil {
 		return nil, err
 	}
 
 	// Initial objects for the registry
-	objMap, err := bus.GetManagedObjects(conn, BluezDest, bus.RootPath)
+	objMap, err := ops.GetManagedObjects(BluezDest, bus.RootPath)
 	if err != nil {
 		return nil, err
 	}
 
 	bluezObj := bluezConn{
-		busConn:        conn,
+		ops:            ops,
 		root:           node,
 		objectRegistry: make(map[dbus.ObjectPath]Base, len(objMap)),
 		busSignalCh:    make(chan *dbus.Signal, 10),
@@ -166,13 +165,13 @@ func InitializeBluez(ctx context.Context) (Bluez, error) {
 		}
 	}
 
-	bluezObj.busConn.Signal(bluezObj.busSignalCh)
+	bluezObj.ops.RegisterSignalChannel(bluezObj.busSignalCh)
 	go bluezObj.handleSignals(ctx)
 
 	return &bluezObj, nil
 }
 
-func (b *bluezConn) createObject(path dbus.ObjectPath, data bus.ObjectMap) Base {
+func (b *bluezConn) createObject(path dbus.ObjectPath, data base.ObjectMap) Base {
 	// The ifaceMap is interface: data. We choose the first interface with data.
 	var newObj Base
 	for iface := range data {
@@ -181,7 +180,6 @@ func (b *bluezConn) createObject(path dbus.ObjectPath, data bus.ObjectMap) Base 
 		if ok {
 			// no need to pass in the main interface type since that's keyed
 			// by the constructor
-			logger.Info("Creating object at path %s", path)
 			newObj = ctor(b, path, data)
 			break
 		}
@@ -189,24 +187,21 @@ func (b *bluezConn) createObject(path dbus.ObjectPath, data bus.ObjectMap) Base 
 	return newObj
 }
 
-// XXX - this should just be AddWatch and takes a signal. We only pass back
-// channels
-// AddWatcher takes a channel and the string for the signal that we are watching for.
-// So far, we only listen on org.freedesktop.DBus.ObjectManager signals.
-// For expanding, we parse sig into object and signal.
 func (b *bluezConn) AddWatch(
 	path dbus.ObjectPath,
 	signalMap []InterfaceSignalPair) (ObjectChangedChan, error) {
 
 	for _, pair := range signalMap {
-		err := bus.Watch(b.busConn, bus.RootPath, pair.Interface, pair.SignalName)
+		err := b.ops.Watch(bus.RootPath, pair.Interface, pair.SignalName)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	ch := make(ObjectChangedChan)
+	ch := make(ObjectChangedChan, 2)
 	logger.Info("AddWatch %s", path)
+	b.rwMux.Lock()
+	defer b.rwMux.Unlock()
 	b.signalWatchers[path] = ch
 
 	return ch, nil
@@ -216,6 +211,7 @@ func (b *bluezConn) RemoveWatch(
 	path dbus.ObjectPath,
 	ch ObjectChangedChan,
 	signalMap []InterfaceSignalPair) error {
+	b.rwMux.Lock()
 	ch, ok := b.signalWatchers[path]
 	if !ok {
 		return fmt.Errorf("No channel found for %s", path)
@@ -223,13 +219,13 @@ func (b *bluezConn) RemoveWatch(
 	delete(b.signalWatchers, path)
 	close(ch)
 	logger.Info("RemoveWatch %s", path)
-	b.signalWatchers[path] = nil
+	b.rwMux.Unlock()
 	for _, pair := range signalMap {
 		// We should replace the channel in the map value with a slice, and
 		// remove the channel from the slice. When the slice is zero, we
 		// call the UnWatch. (It means, we need to store the interfaceName).
 		// But, this will do for now.
-		err := bus.UnWatch(b.busConn, bus.RootPath, pair.Interface, pair.SignalName)
+		err := b.ops.UnWatch(bus.RootPath, pair.Interface, pair.SignalName)
 		if err != nil {
 			return err
 		}
@@ -252,12 +248,12 @@ func (b *bluezConn) FindAdapters() []*Adapter {
 	return adapters
 }
 
-func (b *bluezConn) IntrospectPath(path string) (*bus.Node, error) {
-	return bus.IntrospectObject(b.busConn, BluezDest, dbus.ObjectPath(path))
+func (b *bluezConn) IntrospectPath(path string) (*base.Node, error) {
+	return b.ops.IntrospectObject(BluezDest, dbus.ObjectPath(path))
 }
 
-func (b *bluezConn) GetManagedObjects(path string) (map[dbus.ObjectPath]bus.ObjectMap, error) {
-	return bus.GetManagedObjects(b.busConn, BluezDest, dbus.ObjectPath(path))
+func (b *bluezConn) GetManagedObjects(path string) (map[dbus.ObjectPath]base.ObjectMap, error) {
+	return b.ops.GetManagedObjects(BluezDest, dbus.ObjectPath(path))
 }
 
 func (b *bluezConn) GetObjectsByType(oType string) []Base {
@@ -332,9 +328,9 @@ func (b *bluezConn) FindObjects(pattern string, firstOnly bool) []Base {
 //   typed to bus.ObjectMap
 // So, we'll go with this assumption, and throw and error if it's not, and record when it fails
 // our expectations and deal with them later.
-func (b *bluezConn) parseSignalBody(signalBody []interface{}) (dbus.ObjectPath, bus.ObjectMap, error) {
+func (b *bluezConn) parseSignalBody(signalBody []interface{}) (dbus.ObjectPath, base.ObjectMap, error) {
 	var path dbus.ObjectPath
-	var props bus.ObjectMap
+	var props base.ObjectMap
 	for _, i := range signalBody {
 		p, ok := i.(dbus.ObjectPath)
 		if ok {
@@ -360,10 +356,16 @@ func (b *bluezConn) handleSignals(ctx context.Context) {
 	for !cancelled {
 		select {
 		case sigData := <-b.busSignalCh:
+			if base.DumpData {
+				_, err := test.MarshalSignal(sigData)
+				if err != nil {
+					logger.Info("Unable to marshal signal: %s", err)
+				}
+			}
 			logger.Info("Received: %s", sigData.Path)
 			path, data, err := b.parseSignalBody(sigData.Body)
 			if err != nil {
-				logger.Info("Signal Body unhandled: %s", err)
+				logger.Info("Signal Body unhandled: %s: %s", err, sigData.Body)
 				continue
 			}
 			obj, ok := b.objectRegistry[path]
@@ -377,23 +379,33 @@ func (b *bluezConn) handleSignals(ctx context.Context) {
 			b.objectRegistry[path] = obj
 
 			// Now, forward this to anyone listening on this path.
-			// XXX - Since we allow patterns (well, just *), we need to iterate, which isn't so scalable.
 			sent := false
+			b.rwMux.RLock()
 			for p, listener := range b.signalWatchers {
 				if listener == nil {
 					logger.Info("nil listener")
 					continue
 				}
-				end := string(p[len(p)-1])
-				withoutEnd := string(p[:len(p)-1])
-				if (end == "*" && strings.HasPrefix(string(path), withoutEnd)) || (p == path) {
-					logger.Info("Sending change on %s", p)
-					listener <- newObjectChangedData(path, obj, sigData.Name)
-					sent = true
+				// the Added and Removed are for the adapter, so all of them
+				// will get sent do the channel.
+				trimmed := strings.TrimPrefix(sigData.Name, bus.ObjectManager+".")
+				if trimmed == bus.ObjectManagerFuncs.InterfacesAdded ||
+					trimmed == bus.ObjectManagerFuncs.InterfacesRemoved {
+					fmt.Printf("added or removed. listener %s\n", string(p))
+					if len(strings.Split(string(p), "/")) == 4 { // /org/bluez/hci0
+						logger.Info("Sending change on %s", path)
+						listener <- newObjectChangedData(path, obj, sigData.Name)
+						logger.Info("Sent!!")
+						sent = true
+					}
+				} else if path == p {
+					fmt.Println("Non newObjectChangedData channel data")
 				}
 			}
+			b.rwMux.RUnlock()
 			if !sent {
-				logger.Info("No listeners for %s", path)
+				logger.Info("No listeners %s sending %s to %s", sigData.Sender,
+					path, sigData.Name)
 				continue
 			}
 		case <-ctx.Done():

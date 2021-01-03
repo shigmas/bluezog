@@ -11,7 +11,8 @@ There is one command that is meant to be something like bluetoothctl.
 * Testing notes:
  - > device /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4 connect
    This works, but it seems like it's not getting the alert when it is initially found. But it's in the cache. This is one of my ble beacons. No UUID shows up.
-
+ - cached devices are in /var/lib/bluetooth, under the adapter. 
+ 
 Omron USB ?:
 /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4
 service:

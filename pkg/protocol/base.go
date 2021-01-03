@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/shigmas/bluezog/pkg/bus"
+	"github.com/shigmas/bluezog/pkg/base"
 )
 
 type (
@@ -23,14 +23,13 @@ type (
 		GetBluezInterface() string
 		GetInterfaces() []string
 		// Update is called from the main signal handler for updates to the objects in the registry
-		Update(data bus.ObjectMap) error
+		Update(data base.ObjectMap) error
 	}
 
 	// BaseObject has some objects and implementation so children don't need to implement the
 	// Base interface
 	BaseObject struct {
-		// Let's see if we can remove this
-		conn *bluezConn
+		bluez *bluezConn
 		// Path is the debus object path that all objects will have
 		Path dbus.ObjectPath
 		// string in the constants
@@ -49,18 +48,18 @@ func newBaseObject(
 	conn *bluezConn,
 	name dbus.ObjectPath,
 	mainInterface string,
-	data bus.ObjectMap) *BaseObject {
+	data base.ObjectMap) *BaseObject {
 	props, ok := data[mainInterface]
 	if !ok {
 		return nil
 	}
 
 	iFaces := make([]string, 0)
-	for i, _ := range data {
+	for i := range data {
 		iFaces = append(iFaces, i)
 	}
 	return &BaseObject{
-		conn:       conn,
+		bluez:      conn,
 		Path:       name,
 		childType:  mainInterface,
 		interfaces: iFaces,
@@ -69,7 +68,7 @@ func newBaseObject(
 }
 
 // Update is called from the main signal handler for updates to the objects in the registry
-func (b *BaseObject) Update(data bus.ObjectMap) error {
+func (b *BaseObject) Update(data base.ObjectMap) error {
 	props, ok := data[BluezInterface.Adapter]
 	if !ok {
 		return fmt.Errorf("Data did not contain properties")
@@ -95,6 +94,7 @@ func (b *BaseObject) Property(propName string) interface{} {
 	return prop.Value()
 }
 
+// AllProperties returns all (cached) properties
 func (b *BaseObject) AllProperties() map[string]dbus.Variant {
 	return b.properties
 }
@@ -102,8 +102,7 @@ func (b *BaseObject) AllProperties() map[string]dbus.Variant {
 // FetchProperty for a type. Uses the childType member
 func (b *BaseObject) FetchProperty(propName string) (interface{}, error) {
 	propPath := fmt.Sprintf("%s.%s", b.childType, propName)
-	return bus.GetObjectProperty(b.conn.busConn, BluezDest, b.Path,
-		propPath)
+	return b.bluez.ops.GetObjectProperty(BluezDest, b.Path, propPath)
 }
 
 // GetBluezInterface returns the bluez type that this object was created as. (

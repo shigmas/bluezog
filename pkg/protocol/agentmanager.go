@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"github.com/godbus/dbus/v5"
-	"github.com/shigmas/bluezog/pkg/bus"
+	"github.com/shigmas/bluezog/pkg/base"
 )
 
 type (
@@ -13,14 +13,14 @@ type (
 )
 
 func init() {
-	typeRegistry[BluezInterface.AgentManager] = func(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) Base {
+	typeRegistry[BluezInterface.AgentManager] = func(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) Base {
 		return newAgentManager(conn, name, data)
 
 	}
 
 }
 
-func newAgentManager(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *AgentManager {
+func newAgentManager(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) *AgentManager {
 	return &AgentManager{
 		BaseObject: *newBaseObject(conn, name, BluezInterface.AgentManager, data),
 	}
