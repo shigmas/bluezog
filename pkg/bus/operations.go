@@ -12,30 +12,60 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"github.com/shigmas/bluezog/pkg/base"
 	"github.com/shigmas/bluezog/pkg/logger"
+	"github.com/shigmas/bluezog/test"
 )
 
-// GetObject fetches the introspection information for the object
-func IntrospectObject(conn *dbus.Conn, dest string, objPath dbus.ObjectPath) (*Node, error) {
+type (
+	// DbusOperations is the Dbus implementation of Operations
+	DbusOperations struct {
+		conn *dbus.Conn
+	}
+)
+
+var (
+	_ base.Operations = (*DbusOperations)(nil)
+)
+
+// NewDbusOperations creates a DbusOperations instance which implements Operations
+func NewDbusOperations() base.Operations {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return nil
+	}
+	return &DbusOperations{
+		conn: conn,
+	}
+}
+
+// IntrospectObject fetches the XMM for Introspection and parses it into a Node hierarchy
+func (d *DbusOperations) IntrospectObject(dest string, objPath dbus.ObjectPath) (*base.Node, error) {
 	var s string
-	err := conn.Object(dest, objPath).Call(IntrospectableFuncs.Introspect, 0).Store(&s)
+	err := d.conn.Object(dest, objPath).Call(IntrospectableFuncs.Introspect, 0).Store(&s)
 	if err != nil {
 		return nil, err
 	}
 
-	var node Node
+	var node base.Node
 	b := []byte(s)
 	err = xml.Unmarshal(b, &node)
 	if err != nil {
 		return nil, err
 	}
+	if base.DumpData {
+		_, err := test.MarshalIntrospect(&node)
+		if err != nil {
+			logger.Info("Unable to marshal introspect: %s", err)
+		}
+	}
+
 	return &node, nil
 }
 
 // GetObjectProperty for the specified object and property name
-func GetObjectProperty(conn *dbus.Conn, dest string, objPath dbus.ObjectPath,
-	propName string) (interface{}, error) {
-	val, err := conn.Object(dest, objPath).GetProperty(propName)
+func (d *DbusOperations) GetObjectProperty(dest string, objPath dbus.ObjectPath, propName string) (interface{}, error) {
+	val, err := d.conn.Object(dest, objPath).GetProperty(propName)
 	if err != nil {
 		return nil, err
 	}
@@ -44,12 +74,19 @@ func GetObjectProperty(conn *dbus.Conn, dest string, objPath dbus.ObjectPath,
 }
 
 // GetManagedObjects retrieves the paths of the objects managed by this object
-func GetManagedObjects(conn *dbus.Conn, dest string, objPath dbus.ObjectPath) (map[dbus.ObjectPath]ObjectMap, error) {
-	var s map[dbus.ObjectPath]ObjectMap
-	err := conn.Object(dest, objPath).Call(ObjectManagerFuncs.GetManagedObjects, 0).Store(&s)
+func (d *DbusOperations) GetManagedObjects(dest string, objPath dbus.ObjectPath) (map[dbus.ObjectPath]base.ObjectMap, error) {
+	var s map[dbus.ObjectPath]base.ObjectMap
+	err := d.conn.Object(dest, objPath).Call(ObjectManagerFuncs.GetManagedObjects, 0).Store(&s)
 	if err != nil {
 		logger.Debug("%s error: %s\n", ObjectManagerFuncs.GetManagedObjects, err)
 		return nil, err
+	}
+
+	if base.DumpData {
+		_, err := test.MarshalManagedObjects(s)
+		if err != nil {
+			logger.Info("Unable to marshal ManagedObjects: %s", err)
+		}
 	}
 
 	return s, nil
@@ -60,35 +97,39 @@ func GetManagedObjects(conn *dbus.Conn, dest string, objPath dbus.ObjectPath) (m
 // actually know what they should receive. This just receives nothing. There should
 // be a function with expected return values.
 // Should have a func struct with the conn, dest, path.
-func CallFunction(conn *dbus.Conn, dest string, objPath dbus.ObjectPath, funcName string) error {
+func (d *DbusOperations) CallFunction(dest string, objPath dbus.ObjectPath, funcName string) error {
 	logger.Debug("%s: Call parameters %s, %s", funcName, dest, string(objPath))
-	err := conn.Object(dest, objPath).Call(funcName, 0).Store()
+	err := d.conn.Object(dest, objPath).Call(funcName, 0).Store()
 	return err
 }
 
 // CallFunctionWithArgs is simply CallFunction with arbitrary arguments
-func CallFunctionWithArgs(
+func (d *DbusOperations) CallFunctionWithArgs(
 	retVal interface{},
-	conn *dbus.Conn,
 	dest string,
 	objPath dbus.ObjectPath,
 	funcName string,
 	args ...interface{}) error {
-	err := conn.Object(dest, objPath).Call(funcName, 0, args...).Store(retVal)
+	err := d.conn.Object(dest, objPath).Call(funcName, 0, args...).Store(retVal)
 	return err
 }
 
+// RegisterSignalChannel passes the signal to DBus
+func (d *DbusOperations) RegisterSignalChannel(ch chan<- *dbus.Signal) {
+	d.conn.Signal(ch)
+}
+
 // Watch is a simplified version of AddMatchsignal
-func Watch(conn *dbus.Conn, path dbus.ObjectPath, iface string, method string) error {
-	return conn.AddMatchSignal(
+func (d *DbusOperations) Watch(path dbus.ObjectPath, iface string, method string) error {
+	return d.conn.AddMatchSignal(
 		dbus.WithMatchObjectPath(path),
 		dbus.WithMatchInterface(iface),
 		dbus.WithMatchMember(method))
 }
 
 // UnWatch is a simplified version of RemoveMatchsignal
-func UnWatch(conn *dbus.Conn, path dbus.ObjectPath, iface string, method string) error {
-	return conn.RemoveMatchSignal(
+func (d *DbusOperations) UnWatch(path dbus.ObjectPath, iface string, method string) error {
+	return d.conn.RemoveMatchSignal(
 		dbus.WithMatchObjectPath(path),
 		dbus.WithMatchInterface(iface),
 		dbus.WithMatchMember(method))

@@ -25,6 +25,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/shigmas/bluezog/pkg/bus"
 	"github.com/shigmas/bluezog/pkg/zog"
 )
 
@@ -43,7 +44,7 @@ to quickly create a Cobra application.`,
 		fmt.Println("---------------------")
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		bus := zog.NewBus(ctx)
+		bus := zog.NewBus(ctx, bus.NewDbusOperations())
 		for {
 			fmt.Print("zogctl> ")
 			text, err := reader.ReadString('\n')

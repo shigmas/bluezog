@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/shigmas/bluezog/pkg/bus"
+	"github.com/shigmas/bluezog/pkg/base"
 )
 
 type (
@@ -16,14 +16,14 @@ type (
 )
 
 func init() {
-	typeRegistry[BluezInterface.GATTService] = func(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) Base {
+	typeRegistry[BluezInterface.GATTService] = func(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) Base {
 		return newGattService(conn, name, data)
 
 	}
 
 }
 
-func newGattService(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *GattService {
+func newGattService(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) *GattService {
 	fmt.Println("Creating ", BluezInterface.GATTService)
 	return &GattService{
 		BaseObject: *newBaseObject(conn, name, BluezInterface.GATTService, data),

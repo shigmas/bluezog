@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/shigmas/bluezog/pkg/base"
 	"github.com/shigmas/bluezog/pkg/bus"
 )
 
@@ -17,13 +18,13 @@ type (
 )
 
 func init() {
-	typeRegistry[BluezInterface.Device] = func(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) Base {
+	typeRegistry[BluezInterface.Device] = func(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) Base {
 		return newDevice(conn, name, data)
 	}
 
 }
 
-func newDevice(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *Device {
+func newDevice(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) *Device {
 	d := Device{
 		BaseObject: *newBaseObject(conn, name, BluezInterface.Device, data),
 	}
@@ -35,11 +36,11 @@ func newDevice(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *Devic
 
 // Connect to the device
 func (d *Device) Connect() error {
-	err := bus.CallFunction(d.conn.busConn, BluezDest, d.Path, BluezDevice.Connect)
+	err := d.bluez.ops.CallFunction(BluezDest, d.Path, BluezDevice.Connect)
 	if err != nil {
 		return err
 	}
-	d.discoveryCh, err = d.conn.AddWatch(d.Path,
+	d.discoveryCh, err = d.bluez.AddWatch(d.Path,
 		[]InterfaceSignalPair{
 			InterfaceSignalPair{bus.Properties,
 				bus.PropertiesFuncs.PropertiesChanged},
@@ -48,12 +49,13 @@ func (d *Device) Connect() error {
 	return err
 }
 
+// Disconnect from the device
 func (d *Device) Disconnect() error {
-	err := bus.CallFunction(d.conn.busConn, BluezDest, d.Path, BluezDevice.Disconnect)
+	err := d.bluez.ops.CallFunction(BluezDest, d.Path, BluezDevice.Disconnect)
 	if err != nil {
 		return err
 	}
-	d.discoveryCh, err = d.conn.AddWatch(d.Path,
+	d.discoveryCh, err = d.bluez.AddWatch(d.Path,
 		[]InterfaceSignalPair{
 			InterfaceSignalPair{bus.Properties,
 				bus.PropertiesFuncs.PropertiesChanged},
@@ -62,12 +64,14 @@ func (d *Device) Disconnect() error {
 	return err
 }
 
+// ConnectProfile connects to the device for the specificed UUID
 func (d *Device) ConnectProfile(uuid string) error {
-	return bus.CallFunctionWithArgs(nil, d.conn.busConn, BluezDest, d.Path, BluezDevice.ConnectProfile, uuid)
+	return d.bluez.ops.CallFunctionWithArgs(nil, BluezDest, d.Path, BluezDevice.ConnectProfile, uuid)
 }
 
+// DisconnectProfile disconnects from the device for the specificed UUID
 func (d *Device) DisconnectProfile(uuid string) error {
-	return bus.CallFunctionWithArgs(nil, d.conn.busConn, BluezDest, d.Path, BluezDevice.DisconnectProfile, uuid)
+	return d.bluez.ops.CallFunctionWithArgs(nil, BluezDest, d.Path, BluezDevice.DisconnectProfile, uuid)
 }
 
 // GetProperty gets the property by key

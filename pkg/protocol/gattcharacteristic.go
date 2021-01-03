@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/shigmas/bluezog/pkg/bus"
+	"github.com/shigmas/bluezog/pkg/base"
 )
 
 type (
@@ -15,14 +15,14 @@ type (
 )
 
 func init() {
-	typeRegistry[BluezInterface.GATTCharacteristic] = func(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) Base {
+	typeRegistry[BluezInterface.GATTCharacteristic] = func(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) Base {
 		return newGattCharacteristic(conn, name, data)
 
 	}
 
 }
 
-func newGattCharacteristic(conn *bluezConn, name dbus.ObjectPath, data bus.ObjectMap) *GattCharacteristic {
+func newGattCharacteristic(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) *GattCharacteristic {
 	fmt.Println("Creating ", BluezInterface.GATTCharacteristic)
 	return &GattCharacteristic{
 		BaseObject: *newBaseObject(conn, name, BluezInterface.GATTCharacteristic, data),
@@ -36,8 +36,7 @@ func (gc *GattCharacteristic) ReadValue(offset uint16) ([]byte, error) {
 		"offset": offset,
 	}
 	var val []byte
-	err := bus.CallFunctionWithArgs(val, gc.conn.busConn, BluezDest, gc.Path,
-		BluezGATTCharacteristic.ReadValue, args)
+	err := gc.bluez.ops.CallFunctionWithArgs(val, BluezDest, gc.Path, BluezGATTCharacteristic.ReadValue, args)
 
 	return val, err
 }
