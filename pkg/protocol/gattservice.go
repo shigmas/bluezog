@@ -1,8 +1,6 @@
 package protocol
 
 import (
-	"fmt"
-
 	"github.com/godbus/dbus/v5"
 	"github.com/shigmas/bluezog/pkg/base"
 )
@@ -24,7 +22,6 @@ func init() {
 }
 
 func newGattService(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) *GattService {
-	fmt.Println("Creating ", BluezInterface.GATTService)
 	return &GattService{
 		BaseObject: *newBaseObject(conn, name, BluezInterface.GATTService, data),
 	}

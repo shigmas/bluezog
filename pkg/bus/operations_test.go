@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/shigmas/bluezog/pkg/base"
 
 	"github.com/stretchr/testify/assert"
 )

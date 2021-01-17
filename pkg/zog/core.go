@@ -5,6 +5,7 @@ package zog
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -70,6 +71,7 @@ func init() {
 // NewBus creates a new bus
 func NewBus(ctx context.Context, ops base.Operations) Bus {
 	fmt.Println("Initializing Bluez")
+	//base.DumpData = true
 	bluez, err := protocol.InitializeBluez(ctx, ops)
 
 	if err != nil {
@@ -95,8 +97,6 @@ func (b *BusImpl) GetInterface(...interface{}) error {
 		if b.defaultAdapter == nil {
 			b.defaultAdapter = a
 		}
-		fmt.Println("A: ", a)
-		logger.Info("Local Addr: %s", a.Property(protocol.BluezAdapter.AddressProp))
 		addr, err := a.FetchProperty(protocol.BluezAdapter.AddressProp)
 		if err != nil {
 			return fmt.Errorf("Error fetching %s", protocol.BluezAdapter.AddressProp)
@@ -271,43 +271,52 @@ func (b *BusImpl) Gatt(args ...interface{}) error {
 	return nil
 }
 
-// List some properties
+// List objects by interface, and, optionally, if they have the specified property.
 func (b *BusImpl) List(args ...interface{}) error {
 	var ok bool
-	if len(args) < 1 {
-		return fmt.Errorf("[interface] or [property] is required")
+	if len(args) < 2 {
+		return fmt.Errorf("[path|all] <interface name> (property))")
+	}
+
+	onlyPath := false
+	if pathMode, ok := args[0].(string); ok {
+		if pathMode == "path" {
+			onlyPath = true
+		}
 	}
 
 	name := ""
-	var value interface{}
-	if len(args) >= 2 {
-		name, ok = args[1].(string)
-		if !ok {
+	if name, ok = args[1].(string); !ok {
+		return fmt.Errorf("interface or property argument was not a string")
+	}
+
+	propName := ""
+	if len(args) >= 3 {
+		if propName, ok = args[2].(string); !ok {
 			return fmt.Errorf("interface or property argument was not a string")
 		}
 	}
-	if len(args) >= 3 {
-		value = args[2]
+
+	objects := b.bluez.GetObjectsByInterface(name)
+
+	fmt.Printf("Found %d objects\n", len(objects))
+	if propName != "" {
+		fmt.Printf("Filtering for only objects containing %s\n", propName)
 	}
 
-	var devices []protocol.Base
-	propSearch := false
-	if args[0] == "interface" {
-		devices = b.bluez.GetObjectsByInterface(name)
-	} else if args[0] == "property" {
-		propSearch = true
-		devices = b.bluez.GetObjectsByProperty(name, value)
-	} else {
-		fmt.Printf("Unrecognized parameter [%d]\n", args[0])
-	}
-
-	fmt.Printf("Found %d objects\n", len(devices))
-	for _, d := range devices {
-		fmt.Printf("Path: %s\n", d.GetPath())
-		if propSearch && name != "" {
-			fmt.Printf("%s: %s\n", name, d.Property(name))
-		} else {
-			props := d.AllProperties()
+	for _, o := range objects {
+		if propName != "" {
+			prop, err := o.FetchProperty(propName)
+			if err != nil || prop == nil {
+				continue
+			}
+		}
+		fmt.Printf("Path: %s\n", o.GetPath())
+		if propName != "" {
+			propVal := o.Property(propName)
+			fmt.Printf("%s: %s\n", propName, propVal)
+		} else if !onlyPath {
+			props := o.AllProperties()
 			for k, variant := range props {
 				fmt.Printf("%s: %s\n", k, variant.Value())
 			}
@@ -342,7 +351,34 @@ func (b *BusImpl) deviceReceiver() {
 	fmt.Printf("Waiting for devices...\n")
 	b.rwMux.RLock()
 	for d := range b.deviceRecvCh {
-		fmt.Printf("Received %s\n", d)
+		objs := b.bluez.FindObjects(string(d.Path), true)
+		mfgData := "default"
+		if len(objs) >= 0 {
+			base := objs[0]
+			device, ok := base.(*protocol.Device)
+			if !ok {
+				mfgData = "not device"
+			} else {
+				prop, err := device.FetchProperty("ManufacturerData")
+				if err == nil {
+					var ok bool
+					mfgDataMap, ok := prop.(map[uint16]interface{})
+					if ok {
+						mfgData = fmt.Sprintf("%d: %v", len(mfgDataMap), mfgDataMap)
+					} else {
+						// This may be empty for devices that don't provide this property
+						mfgData = reflect.TypeOf(prop).Name()
+					}
+				} else {
+					fmt.Println("Error: ", err)
+					mfgData = err.Error()
+				}
+			}
+		} else {
+			mfgData = "Not in Cache"
+		}
+
+		fmt.Printf("Received %s (ManufacturerData: %s)\n", d.Path, mfgData)
 	}
 	b.rwMux.RUnlock()
 	fmt.Printf("Leaving deviceReceiver\n")

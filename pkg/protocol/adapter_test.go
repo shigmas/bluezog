@@ -14,7 +14,7 @@ func TestAdapter(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	//bluez, err := InitializeBluez(ctx, bus.NewDbusOperations())
-	bluez, err := InitializeBluez(ctx, &test.BusMock{})
+	bluez, err := InitializeBluez(ctx, test.NewBusMock("simple"))
 	assert.NoError(t, err, "Unexpected error initializing adapter")
 	assert.NotNil(t, bluez, "Unable to initialize bluez")
 	var adapter *Adapter

@@ -71,7 +71,6 @@ type (
 		// value is not nil, we will return the objects that match the property *and*
 		// value
 		GetObjectsByInterface(interfaceName string) []Base
-		GetObjectsByProperty(property string, value interface{}) []Base
 		FindObjects(pattern string, firstOnly bool) []Base
 		//IntrospectObject()
 
@@ -107,10 +106,11 @@ type (
 		root *base.Node
 		// Objects known to this connection.
 		objectRegistry map[dbus.ObjectPath]Base
+		registryMux    sync.RWMutex
 		busSignalCh    chan *dbus.Signal
 		// Should be a map to slice
 		signalWatchers map[dbus.ObjectPath]ObjectChangedChan
-		rwMux          sync.RWMutex
+		sigWatchersMux sync.RWMutex
 	}
 
 	typeConstructorFn func(*bluezConn, dbus.ObjectPath, base.ObjectMap) Base
@@ -156,6 +156,8 @@ func InitializeBluez(ctx context.Context, ops base.Operations) (Bluez, error) {
 		signalWatchers: make(map[dbus.ObjectPath]ObjectChangedChan, 10),
 	}
 
+	// we're locking too long, but no one else has object yet
+	bluezObj.registryMux.Lock()
 	for path, ifaceMap := range objMap {
 		newObj := bluezObj.createObject(path, ifaceMap)
 		if newObj == nil {
@@ -164,6 +166,7 @@ func InitializeBluez(ctx context.Context, ops base.Operations) (Bluez, error) {
 			bluezObj.objectRegistry[path] = newObj
 		}
 	}
+	bluezObj.registryMux.Unlock()
 
 	bluezObj.ops.RegisterSignalChannel(bluezObj.busSignalCh)
 	go bluezObj.handleSignals(ctx)
@@ -200,8 +203,8 @@ func (b *bluezConn) AddWatch(
 
 	ch := make(ObjectChangedChan, 2)
 	logger.Info("AddWatch %s", path)
-	b.rwMux.Lock()
-	defer b.rwMux.Unlock()
+	b.sigWatchersMux.Lock()
+	defer b.sigWatchersMux.Unlock()
 	b.signalWatchers[path] = ch
 
 	return ch, nil
@@ -211,7 +214,7 @@ func (b *bluezConn) RemoveWatch(
 	path dbus.ObjectPath,
 	ch ObjectChangedChan,
 	signalMap []InterfaceSignalPair) error {
-	b.rwMux.Lock()
+	b.sigWatchersMux.Lock()
 	ch, ok := b.signalWatchers[path]
 	if !ok {
 		return fmt.Errorf("No channel found for %s", path)
@@ -219,7 +222,7 @@ func (b *bluezConn) RemoveWatch(
 	delete(b.signalWatchers, path)
 	close(ch)
 	logger.Info("RemoveWatch %s", path)
-	b.rwMux.Unlock()
+	b.sigWatchersMux.Unlock()
 	for _, pair := range signalMap {
 		// We should replace the channel in the map value with a slice, and
 		// remove the channel from the slice. When the slice is zero, we
@@ -258,6 +261,8 @@ func (b *bluezConn) GetManagedObjects(path string) (map[dbus.ObjectPath]base.Obj
 
 func (b *bluezConn) GetObjectsByType(oType string) []Base {
 	objects := make([]Base, 0)
+	b.registryMux.RLock()
+	defer b.registryMux.RLock()
 	for _, v := range b.objectRegistry {
 		if v.GetBluezInterface() == oType {
 			objects = append(objects, v)
@@ -269,10 +274,12 @@ func (b *bluezConn) GetObjectsByType(oType string) []Base {
 
 func (b *bluezConn) GetObjectsByInterface(interfaceName string) []Base {
 	results := make([]Base, 0)
+	b.registryMux.RLock()
+	defer b.registryMux.RLock()
 	for _, obj := range b.objectRegistry {
 		ifaces := obj.GetInterfaces()
 		for _, i := range ifaces {
-			if interfaceName != "" || i == interfaceName {
+			if i == interfaceName {
 				results = append(results, obj)
 				break
 			}
@@ -282,32 +289,17 @@ func (b *bluezConn) GetObjectsByInterface(interfaceName string) []Base {
 	return results
 }
 
-func (b *bluezConn) GetObjectsByProperty(property string, value interface{}) []Base {
-	results := make([]Base, 0)
-	for _, obj := range b.objectRegistry {
-		if property == "" {
-			results = append(results, obj)
-		} else {
-			props := obj.AllProperties()
-			for k, v := range props {
-				if k == property {
-					if value == nil || v == value {
-						results = append(results, obj)
-						break
-					}
-				}
-			}
-		}
-	}
-
-	return results
-}
-
 func (b *bluezConn) FindObjects(pattern string, firstOnly bool) []Base {
 	// If pattern is a regex, then it can match more than one
+	if len(pattern) == 0 {
+		fmt.Println("Pattern is empty")
+		return nil
+	}
 	end := string(pattern[len(pattern)-1])
 	withoutEnd := string(pattern[:len(pattern)-1])
 	results := make([]Base, 0)
+	b.registryMux.RLock()
+	defer b.registryMux.RLock()
 	for path, obj := range b.objectRegistry {
 		if end == "*" && strings.HasPrefix(string(path), withoutEnd) {
 			results = append(results, obj)
@@ -362,25 +354,27 @@ func (b *bluezConn) handleSignals(ctx context.Context) {
 					logger.Info("Unable to marshal signal: %s", err)
 				}
 			}
-			logger.Info("Received: %s", sigData.Path)
 			path, data, err := b.parseSignalBody(sigData.Body)
 			if err != nil {
 				logger.Info("Signal Body unhandled: %s: %s", err, sigData.Body)
 				continue
 			}
+			b.registryMux.RLock()
 			obj, ok := b.objectRegistry[path]
+			b.registryMux.RUnlock()
 			if ok {
-				logger.Info("Updating path %s", path)
+				//logger.Info("Updating path %s", path)
 				obj.Update(data)
 			}
 			// Doesn't exist. Create the new object
-			logger.Info("Creating new path %s", path)
+			//logger.Info("Creating new path %s", path)
 			obj = b.createObject(path, data)
+			b.registryMux.RLock()
 			b.objectRegistry[path] = obj
-
+			b.registryMux.RUnlock()
 			// Now, forward this to anyone listening on this path.
 			sent := false
-			b.rwMux.RLock()
+			b.sigWatchersMux.RLock()
 			for p, listener := range b.signalWatchers {
 				if listener == nil {
 					logger.Info("nil listener")
@@ -391,18 +385,15 @@ func (b *bluezConn) handleSignals(ctx context.Context) {
 				trimmed := strings.TrimPrefix(sigData.Name, bus.ObjectManager+".")
 				if trimmed == bus.ObjectManagerFuncs.InterfacesAdded ||
 					trimmed == bus.ObjectManagerFuncs.InterfacesRemoved {
-					fmt.Printf("added or removed. listener %s\n", string(p))
 					if len(strings.Split(string(p), "/")) == 4 { // /org/bluez/hci0
-						logger.Info("Sending change on %s", path)
 						listener <- newObjectChangedData(path, obj, sigData.Name)
-						logger.Info("Sent!!")
 						sent = true
 					}
 				} else if path == p {
 					fmt.Println("Non newObjectChangedData channel data")
 				}
 			}
-			b.rwMux.RUnlock()
+			b.sigWatchersMux.RUnlock()
 			if !sent {
 				logger.Info("No listeners %s sending %s to %s", sigData.Sender,
 					path, sigData.Name)
