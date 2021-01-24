@@ -21,9 +21,7 @@ func TestBus(t *testing.T) {
 }
 
 func TestGattPath(t *testing.T) {
-	ctx := context.Background()
-
-	bus := NewBus(ctx, &test.NewBusMock("gatt")
+	bus := NewBus(context.Background(), test.NewBusMock("gatt"))
 	assert.NoError(t, bus.GetInterface(), "Unexpected error setting adapter")
 	assert.NoError(t, bus.StartDiscovery(), "Unexpected error starting discovery")
 

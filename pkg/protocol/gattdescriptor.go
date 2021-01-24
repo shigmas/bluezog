@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"context"
+
 	"github.com/godbus/dbus/v5"
 	"github.com/shigmas/bluezog/pkg/base"
 )
@@ -28,12 +30,12 @@ func newGattDescriptor(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMa
 
 // ReadValue reads the value from the descriptor. The function takes a dict,
 // but since the client only takes the offset, that's all we provide here.
-func (gc *GattDescriptor) ReadValue(offset uint16) ([]byte, error) {
+func (gc *GattDescriptor) ReadValue(ctx context.Context, offset uint16) ([]byte, error) {
 	args := map[string]interface{}{
 		"offset": offset,
 	}
 	var val []byte
-	err := gc.bluez.ops.CallFunctionWithArgs(val, BluezDest, gc.Path, BluezGATTDescriptor.ReadValue, args)
+	err := gc.bluez.ops.CallFunctionWithArgs(ctx, val, BluezDest, gc.Path, BluezGATTDescriptor.ReadValue, args)
 
 	return val, err
 }

@@ -1,6 +1,8 @@
 package base
 
 import (
+	"context"
+
 	"github.com/godbus/dbus/v5"
 )
 
@@ -52,8 +54,13 @@ type (
 		IntrospectObject(dest string, objPath dbus.ObjectPath) (*Node, error)
 		GetObjectProperty(dest string, objPath dbus.ObjectPath, propName string) (interface{}, error)
 		GetManagedObjects(dest string, objPath dbus.ObjectPath) (map[dbus.ObjectPath]ObjectMap, error)
-		CallFunction(dest string, objPath dbus.ObjectPath, funcName string) error
+		CallFunction(
+			ctx context.Context,
+			dest string,
+			objPath dbus.ObjectPath,
+			funcName string) error
 		CallFunctionWithArgs(
+			ctx context.Context,
 			retVal interface{},
 			dest string,
 			objPath dbus.ObjectPath,

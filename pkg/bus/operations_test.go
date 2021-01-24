@@ -16,6 +16,8 @@ func TestObject(t *testing.T) {
 	objDest := "org.bluez"
 	objPath := dbus.ObjectPath("/org/bluez")
 	ops := NewDbusOperations()
+	ctx := context.Background()
+
 	// This is the only error that can be returned. Of course, the user doesn't have that
 	// insight into the implementation.
 	assert.NotNil(t, ops, "Unable to connect to system d-bus")
@@ -39,23 +41,24 @@ func TestObject(t *testing.T) {
 		badFunc := "org.bluez.Adapter1.NoSuchFunction"
 		startFunc := "org.bluez.Adapter1.StartDiscovery"
 		stopFunc := "org.bluez.Adapter1.StopDiscovery"
+
 		// Should really see what functions should be called for different numbers of
 		// arguments.
 		t.Run("Failure", func(t *testing.T) {
-			err := ops.CallFunction(objDest, adapterPath, badFunc)
+			err := ops.CallFunction(ctx, objDest, adapterPath, badFunc)
 			assert.Error(t, err, "Expected Error for %s and function %s",
 				adapterPath, badFunc)
 
 			// Should still fail because we haven't started discovery
-			err = ops.CallFunction(objDest, adapterPath, stopFunc)
+			err = ops.CallFunction(ctx, objDest, adapterPath, stopFunc)
 			assert.Error(t, err, "Expected Error for %s and function %s",
 				adapterPath, badFunc)
 		})
 
 		t.Run("Success", func(t *testing.T) {
-			err := ops.CallFunction(objDest, adapterPath, startFunc)
+			err := ops.CallFunction(ctx, objDest, adapterPath, startFunc)
 			assert.NoError(t, err, "Unexpected Error for %s", startFunc)
-			err = ops.CallFunction(objDest, adapterPath, stopFunc)
+			err = ops.CallFunction(ctx, objDest, adapterPath, stopFunc)
 			assert.NoError(t, err, "Unexpected Error for %s", stopFunc)
 		})
 
