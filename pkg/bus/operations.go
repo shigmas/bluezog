@@ -9,6 +9,7 @@ package bus
 
 import (
 	"encoding/xml"
+	"fmt"
 
 	"github.com/godbus/dbus/v5"
 
@@ -110,7 +111,13 @@ func (d *DbusOperations) CallFunctionWithArgs(
 	objPath dbus.ObjectPath,
 	funcName string,
 	args ...interface{}) error {
-	err := d.conn.Object(dest, objPath).Call(funcName, 0, args...).Store(retVal)
+	logger.Debug("%s: CallWithArgs parameters %s, %s", funcName, dest, string(objPath))
+	var flags dbus.Flags
+	if retVal == nil {
+		fmt.Println("retVal is nil")
+		flags = dbus.FlagNoReplyExpected
+	}
+	err := d.conn.Object(dest, objPath).Call(funcName, flags, args...).Store(retVal)
 	return err
 }
 

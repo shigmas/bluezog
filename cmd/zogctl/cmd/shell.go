@@ -1,4 +1,5 @@
 /*
+Package cmd is the CLI package. This is the shell cmd
 Copyright © 2020 NAME HERE <EMAIL ADDRESS>
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +17,6 @@ limitations under the License.
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -25,6 +25,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/chzyer/readline"
 	"github.com/shigmas/bluezog/pkg/bus"
 	"github.com/shigmas/bluezog/pkg/zog"
 )
@@ -40,19 +41,21 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		reader := bufio.NewReader(os.Stdin)
 		fmt.Println("---------------------")
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		bus := zog.NewBus(ctx, bus.NewDbusOperations())
+		rl, err := readline.New("zogctl> ")
+		if err != nil {
+			os.Exit(0)
+		}
+		defer rl.Close()
+
 		for {
-			fmt.Print("zogctl> ")
-			text, err := reader.ReadString('\n')
+			text, err := rl.Readline()
 			if err == io.EOF {
 				os.Exit(0)
 			}
-			// convert CRLF to LF
-			text = strings.Replace(text, "\n", "", -1)
 
 			// This should handle multiple spaces, but save 10 minutes...
 			cmdAndArgs := strings.Split(text, " ")

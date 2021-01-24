@@ -66,7 +66,16 @@ func (d *Device) Disconnect() error {
 
 // ConnectProfile connects to the device for the specificed UUID
 func (d *Device) ConnectProfile(uuid string) error {
-	return d.bluez.ops.CallFunctionWithArgs(nil, BluezDest, d.Path, BluezDevice.ConnectProfile, uuid)
+	// The specs don't have a return value, but we get one. So, let's see what this is.
+	var ret int
+	err := d.bluez.ops.CallFunctionWithArgs(&ret, BluezDest, d.Path, BluezDevice.ConnectProfile, uuid)
+	// d.discoveryCh, err = d.bluez.AddWatch(d.Path,
+	// 	[]InterfaceSignalPair{
+	// 		InterfaceSignalPair{bus.Properties,
+	// 			bus.PropertiesFuncs.PropertiesChanged},
+	// 	})
+
+	return err
 }
 
 // DisconnectProfile disconnects from the device for the specificed UUID

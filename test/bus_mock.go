@@ -11,38 +11,48 @@ import (
 )
 
 type (
-	// BusMock mocks the bus operations
-	BusMock struct {
-		sigCh      chan<- *dbus.Signal
-		sigStopper map[string]func()
+	// busMock mocks the bus operations
+	busMock struct {
+		sigCh       chan<- *dbus.Signal
+		sigStopper  map[string]func()
+		managedType string
 	}
 )
 
 var (
 	// BusSignalInterval is the time between simulated signals
 	BusSignalInterval                 = time.Second
-	_                 base.Operations = (*BusMock)(nil)
+	_                 base.Operations = (*busMock)(nil)
 )
 
+// NewBusMock creates a mock bus (base.Operations implementation). The
+// parameter is either "simple" or "gatt" for the managed objects file
+func NewBusMock(managedType string) base.Operations {
+	return &busMock{
+		managedType: managedType,
+	}
+}
+
 // IntrospectObject fetches the XML for Introspection and parses it into a Node hierarchy
-func (b *BusMock) IntrospectObject(dest string, objPath dbus.ObjectPath) (*base.Node, error) {
+func (b *busMock) IntrospectObject(dest string, objPath dbus.ObjectPath) (*base.Node, error) {
 	node, err := UnmarshalIntrospect("introspect-794476729")
 	return &node, err
 }
 
 // GetObjectProperty for the specified object and property name
-func (b *BusMock) GetObjectProperty(dest string, objPath dbus.ObjectPath, propName string) (interface{}, error) {
+func (b *busMock) GetObjectProperty(dest string, objPath dbus.ObjectPath, propName string) (interface{}, error) {
 
 	return nil, fmt.Errorf("GetObjectProperty not yet mocked")
 }
 
 // GetManagedObjects retrieves the paths of the objects managed by this object
-func (b *BusMock) GetManagedObjects(dest string, objPath dbus.ObjectPath) (map[dbus.ObjectPath]base.ObjectMap, error) {
-	return UnmarshalManagedObjects("managed-205370564")
+func (b *busMock) GetManagedObjects(dest string, objPath dbus.ObjectPath) (map[dbus.ObjectPath]base.ObjectMap, error) {
+
+	return UnmarshalManagedObjects("managed-" + b.managedType)
 }
 
 // CallFunction is exposes the simplest and common way to call a function on the object
-func (b *BusMock) CallFunction(dest string, objPath dbus.ObjectPath, funcName string) error {
+func (b *busMock) CallFunction(dest string, objPath dbus.ObjectPath, funcName string) error {
 	if strings.HasSuffix(funcName, "StartDiscovery") {
 		return nil
 	}
@@ -53,7 +63,7 @@ func (b *BusMock) CallFunction(dest string, objPath dbus.ObjectPath, funcName st
 }
 
 // CallFunctionWithArgs is simply CallFunction with arbitrary arguments
-func (b *BusMock) CallFunctionWithArgs(
+func (b *busMock) CallFunctionWithArgs(
 	retVal interface{},
 	dest string,
 	objPath dbus.ObjectPath,
@@ -63,7 +73,7 @@ func (b *BusMock) CallFunctionWithArgs(
 }
 
 // RegisterSignalChannel passes the signal to DBus.
-func (b *BusMock) RegisterSignalChannel(ch chan<- *dbus.Signal) {
+func (b *busMock) RegisterSignalChannel(ch chan<- *dbus.Signal) {
 	b.sigCh = ch
 	if b.sigStopper == nil {
 		b.sigStopper = make(map[string]func())
@@ -75,7 +85,7 @@ func getWatchKey(iface, method string) string {
 }
 
 // Watch is a simplified version of AddMatchsignal
-func (b *BusMock) Watch(path dbus.ObjectPath, iface string, method string) error {
+func (b *busMock) Watch(path dbus.ObjectPath, iface string, method string) error {
 	if method != "InterfacesAdded" {
 		fmt.Printf("No stored signals for %s. Nothing will be found\n", method)
 		return nil
@@ -115,7 +125,7 @@ func (b *BusMock) Watch(path dbus.ObjectPath, iface string, method string) error
 }
 
 // UnWatch is a simplified version of RemoveMatchsignal
-func (b *BusMock) UnWatch(path dbus.ObjectPath, iface string, method string) error {
+func (b *busMock) UnWatch(path dbus.ObjectPath, iface string, method string) error {
 	cancel, ok := b.sigStopper[getWatchKey(iface, method)]
 	if !ok {
 		fmt.Println("No watcher for ", getWatchKey(iface, method))

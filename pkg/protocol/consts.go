@@ -32,6 +32,7 @@ type (
 		MediaTransport     string
 		GATTService        string
 		GATTCharacteristic string
+		GATTDescriptor     string
 	}
 
 	bluezAdapter struct {
@@ -89,6 +90,7 @@ var (
 		MediaTransport:     BluezDest + ".MediaTransport1",
 		GATTService:        BluezDest + ".GattService1",
 		GATTCharacteristic: BluezDest + ".GattCharacteristic1",
+		GATTDescriptor:     BluezDest + ".GattDescriptor1",
 	}
 
 	// BluezAdapter are the constants for the adapter
@@ -134,8 +136,8 @@ var (
 
 	// BluezGATTCharacteristic are the constants for the GATT characteristic
 	BluezGATTCharacteristic = bluezGATTCharacteristic{
-		ReadValue:  "ReadValue",
-		WriteValue: "WriteValue",
+		ReadValue:  BluezInterface.GATTCharacteristic + ".ReadValue",
+		WriteValue: BluezInterface.GATTCharacteristic + ".WriteValue",
 	}
 
 	// BluezGATTDescriptor are the constants for the GATT descriptor
