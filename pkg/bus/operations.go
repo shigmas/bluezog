@@ -8,7 +8,9 @@ package bus
 // very useful to mock these functions over the real API.
 
 import (
+	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
@@ -37,6 +39,24 @@ func NewDbusOperations() base.Operations {
 	}
 	return &DbusOperations{
 		conn: conn,
+	}
+}
+
+func callWithTimeout(ctx context.Context, f func() error) error {
+	ch := make(chan error)
+
+	go func() {
+		err := f()
+		if ch != nil {
+			ch <- err
+		}
+	}()
+
+	select {
+	case err := <-ch:
+		return err
+	case <-ctx.Done():
+		return errors.New("Timed out")
 	}
 }
 
@@ -98,14 +118,21 @@ func (d *DbusOperations) GetManagedObjects(dest string, objPath dbus.ObjectPath)
 // actually know what they should receive. This just receives nothing. There should
 // be a function with expected return values.
 // Should have a func struct with the conn, dest, path.
-func (d *DbusOperations) CallFunction(dest string, objPath dbus.ObjectPath, funcName string) error {
+func (d *DbusOperations) CallFunction(
+	ctx context.Context,
+	dest string,
+	objPath dbus.ObjectPath,
+	funcName string) error {
 	logger.Debug("%s: Call parameters %s, %s", funcName, dest, string(objPath))
-	err := d.conn.Object(dest, objPath).Call(funcName, 0).Store()
-	return err
+	return callWithTimeout(ctx,
+		func() error {
+			return d.conn.Object(dest, objPath).Call(funcName, 0).Store()
+		})
 }
 
 // CallFunctionWithArgs is simply CallFunction with arbitrary arguments
 func (d *DbusOperations) CallFunctionWithArgs(
+	ctx context.Context,
 	retVal interface{},
 	dest string,
 	objPath dbus.ObjectPath,
@@ -117,8 +144,10 @@ func (d *DbusOperations) CallFunctionWithArgs(
 		fmt.Println("retVal is nil")
 		flags = dbus.FlagNoReplyExpected
 	}
-	err := d.conn.Object(dest, objPath).Call(funcName, flags, args...).Store(retVal)
-	return err
+	return callWithTimeout(ctx,
+		func() error {
+			return d.conn.Object(dest, objPath).Call(funcName, flags, args...).Store(retVal)
+		})
 }
 
 // RegisterSignalChannel passes the signal to DBus

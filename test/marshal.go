@@ -33,7 +33,7 @@ func readBytes(data interface{}, n string) error {
 	return json.Unmarshal(b, data)
 }
 
-// MarshalIntrospect writes the introspect data and returns the file name or error
+// MarshalRaw writes the raw bytes and returns the file name or error
 func MarshalRaw(b []byte, prefix string) (string, error) {
 	return writeBytes(b, fmt.Sprintf("raw-%s-", prefix))
 }

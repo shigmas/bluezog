@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/shigmas/bluezog/pkg/base"
 	"github.com/shigmas/bluezog/pkg/logger"
@@ -173,6 +174,10 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 		return fmt.Errorf("Base is not a Device")
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(),
+		30*time.Second)
+	defer cancel()
+
 	switch command {
 	case "dump":
 		fmt.Printf("Path: %s\n", base.GetPath())
@@ -201,10 +206,10 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 			if !ok {
 				return fmt.Errorf("Unable to convert %s to string", args[2])
 			}
-			err = device.ConnectProfile(uuid)
+			err = device.ConnectProfile(ctx, uuid)
 			fmt.Println("ConnectProfile")
 		} else {
-			err = device.Connect()
+			err = device.Connect(ctx)
 		}
 		if err != nil {
 			return fmt.Errorf("Unable to connect to device %s: %s", addressArg, err)
@@ -217,10 +222,10 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 			if !ok {
 				return fmt.Errorf("Unable to convert %s to string", args[2])
 			}
-			err = device.DisconnectProfile(uuid)
+			err = device.DisconnectProfile(ctx, uuid)
 			fmt.Println("ConnectProfile")
 		} else {
-			err = device.Disconnect()
+			err = device.Disconnect(ctx)
 		}
 		if err != nil {
 			return fmt.Errorf("Unable to connect to device %s: %s", addressArg, err)
@@ -259,6 +264,10 @@ func (b *BusImpl) Gatt(args ...interface{}) error {
 	}
 	base := objs[0]
 
+	ctx, cancel := context.WithTimeout(context.Background(),
+		30*time.Second)
+	defer cancel()
+
 	// A GATT paths
 	// Service:
 	// /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4/service001f
@@ -277,7 +286,7 @@ func (b *BusImpl) Gatt(args ...interface{}) error {
 		if !ok {
 			return fmt.Errorf("Path appeared to a GATT Characteristic, but not convertible")
 		}
-		val, err := characteristic.ReadValue(0)
+		val, err := characteristic.ReadValue(ctx, 0)
 		if err != nil {
 			return err
 		}

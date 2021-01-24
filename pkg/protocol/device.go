@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	//"context"
+	"context"
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
@@ -35,8 +35,8 @@ func newDevice(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) *Devi
 }
 
 // Connect to the device
-func (d *Device) Connect() error {
-	err := d.bluez.ops.CallFunction(BluezDest, d.Path, BluezDevice.Connect)
+func (d *Device) Connect(ctx context.Context) error {
+	err := d.bluez.ops.CallFunction(ctx, BluezDest, d.Path, BluezDevice.Connect)
 	if err != nil {
 		return err
 	}
@@ -50,8 +50,8 @@ func (d *Device) Connect() error {
 }
 
 // Disconnect from the device
-func (d *Device) Disconnect() error {
-	err := d.bluez.ops.CallFunction(BluezDest, d.Path, BluezDevice.Disconnect)
+func (d *Device) Disconnect(ctx context.Context) error {
+	err := d.bluez.ops.CallFunction(ctx, BluezDest, d.Path, BluezDevice.Disconnect)
 	if err != nil {
 		return err
 	}
@@ -65,10 +65,10 @@ func (d *Device) Disconnect() error {
 }
 
 // ConnectProfile connects to the device for the specificed UUID
-func (d *Device) ConnectProfile(uuid string) error {
+func (d *Device) ConnectProfile(ctx context.Context, uuid string) error {
 	// The specs don't have a return value, but we get one. So, let's see what this is.
 	var ret int
-	err := d.bluez.ops.CallFunctionWithArgs(&ret, BluezDest, d.Path, BluezDevice.ConnectProfile, uuid)
+	err := d.bluez.ops.CallFunctionWithArgs(ctx, &ret, BluezDest, d.Path, BluezDevice.ConnectProfile, uuid)
 	// d.discoveryCh, err = d.bluez.AddWatch(d.Path,
 	// 	[]InterfaceSignalPair{
 	// 		InterfaceSignalPair{bus.Properties,
@@ -79,8 +79,8 @@ func (d *Device) ConnectProfile(uuid string) error {
 }
 
 // DisconnectProfile disconnects from the device for the specificed UUID
-func (d *Device) DisconnectProfile(uuid string) error {
-	return d.bluez.ops.CallFunctionWithArgs(nil, BluezDest, d.Path, BluezDevice.DisconnectProfile, uuid)
+func (d *Device) DisconnectProfile(ctx context.Context, uuid string) error {
+	return d.bluez.ops.CallFunctionWithArgs(ctx, nil, BluezDest, d.Path, BluezDevice.DisconnectProfile, uuid)
 }
 
 // GetProperty gets the property by key

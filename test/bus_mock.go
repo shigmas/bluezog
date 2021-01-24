@@ -52,7 +52,11 @@ func (b *busMock) GetManagedObjects(dest string, objPath dbus.ObjectPath) (map[d
 }
 
 // CallFunction is exposes the simplest and common way to call a function on the object
-func (b *busMock) CallFunction(dest string, objPath dbus.ObjectPath, funcName string) error {
+func (b *busMock) CallFunction(
+	_ context.Context,
+	dest string,
+	objPath dbus.ObjectPath,
+	funcName string) error {
 	if strings.HasSuffix(funcName, "StartDiscovery") {
 		return nil
 	}
@@ -64,6 +68,7 @@ func (b *busMock) CallFunction(dest string, objPath dbus.ObjectPath, funcName st
 
 // CallFunctionWithArgs is simply CallFunction with arbitrary arguments
 func (b *busMock) CallFunctionWithArgs(
+	_ context.Context,
 	retVal interface{},
 	dest string,
 	objPath dbus.ObjectPath,

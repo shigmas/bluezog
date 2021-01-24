@@ -2,6 +2,7 @@ package protocol
 
 import (
 	//"context"
+	"context"
 	"fmt"
 	"sync"
 
@@ -61,7 +62,8 @@ func (a *Adapter) StartDiscovery() (ObjectChangedChan, error) {
 		return nil, err
 	}
 	a.discoveryCh = ch
-	return ch, a.bluez.ops.CallFunction(BluezDest, a.Path, BluezAdapter.StartDiscovery)
+	return ch, a.bluez.ops.CallFunction(context.Background(),
+		BluezDest, a.Path, BluezAdapter.StartDiscovery)
 }
 
 // StopDiscovery on the adapter. This will disable getting any information from the devices
@@ -82,5 +84,6 @@ func (a *Adapter) StopDiscovery() error {
 	a.discoveryCh = nil
 	//defer a.cancelDisc()
 
-	return a.bluez.ops.CallFunction(BluezDest, a.Path, BluezAdapter.StopDiscovery)
+	return a.bluez.ops.CallFunction(context.Background(),
+		BluezDest, a.Path, BluezAdapter.StopDiscovery)
 }

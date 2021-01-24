@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"context"
+
 	"github.com/godbus/dbus/v5"
 	"github.com/shigmas/bluezog/pkg/base"
 )
@@ -28,7 +30,7 @@ func newGattCharacteristic(conn *bluezConn, name dbus.ObjectPath, data base.Obje
 
 // ReadValue reads the value from the characteristic. The function takes a dict,
 // but since the client only takes the offset, that's all we provide here.
-func (gc *GattCharacteristic) ReadValue(offset uint16) ([]byte, error) {
+func (gc *GattCharacteristic) ReadValue(ctx context.Context, offset uint16) ([]byte, error) {
 	// gatt /org/bluez/hci0/dev_D1_40_FD_DE_C6_1C/service0026/char0035
 	// command gatt returned error [Method "ReadValue" with signature "a{sv}" on interface "(null)" doesn't exist
 	// ]
@@ -42,7 +44,7 @@ func (gc *GattCharacteristic) ReadValue(offset uint16) ([]byte, error) {
 	// This works for the ALP's sensor (SNM00). Hard to add this as a CLI, so hardcoding it for now,
 	// but is one of the last things that should be hardcoded.
 	val := make([]byte, 4)
-	err := gc.bluez.ops.CallFunctionWithArgs(val, BluezDest, gc.Path,
+	err := gc.bluez.ops.CallFunctionWithArgs(ctx, val, BluezDest, gc.Path,
 		BluezGATTCharacteristic.ReadValue, args)
 
 	return val, err
