@@ -45,7 +45,7 @@ var (
 
 	// PropertiesFuncs are the signals provided by Properties
 	PropertiesFuncs = propertiesFuncs{
-		PropertiesChanged: Properties + ".PropertiesChanged",
+		PropertiesChanged: "PropertiesChanged",
 	}
 	// IntrospectableFuncs are the functdions provided on Introspectable
 	IntrospectableFuncs = introspectableFuncs{
