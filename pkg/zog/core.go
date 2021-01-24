@@ -128,6 +128,26 @@ func (b *BusImpl) StopDiscovery(...interface{}) error {
 	return nil
 }
 
+func printNode(n *base.Node) string {
+	str := fmt.Sprintf("%s\n", n.Name)
+	str += fmt.Sprintf("Sub Nodes:\n")
+	for _, sub := range n.Nodes {
+		str += fmt.Sprintf("\t%s\n", sub.Name)
+	}
+	str += fmt.Sprintf("Interfaces:\n")
+	for _, sub := range n.Interfaces {
+		str += fmt.Sprintf("\t%s\n", sub.Name)
+		for _, m := range sub.Methods {
+			str += fmt.Sprintf("\t\tMethod: %s(%s)\n", m.Name, m.Args)
+		}
+		for _, s := range sub.Signals {
+			str += fmt.Sprintf("\t\tSignal: %s(%s)\n", s.Name, s.Args)
+		}
+	}
+
+	return str
+}
+
 // ObjectCommands provide the API to send commands to devices
 func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 	// device /org/bluez/hci0/dev_FE_CD_66_43_D8_9E connect 00001800-0000-1000-8000-00805f9b34fb 00001801-0000-1000-8000-00805f9b34fb
@@ -165,7 +185,7 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Tree: %s\n", node)
+		fmt.Printf(printNode(node))
 	case "children":
 		managed, err := b.bluez.GetManagedObjects(addressArg)
 		if err != nil {

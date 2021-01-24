@@ -1,19 +1,28 @@
-An attempt at a bluez-like interface to access bluetooth devices over DBus in Go.
+# Bluezog
 
-There are already a few out there, but they are too full featured. Features are nice, but not when the framework
-has bugs which are impossible to work around. Bluez is a simple interface, so it shouldn't be bogged down with
-too much extra stuff if you just want to a way to access devices in Go.
+A Bluez implementation in Golang
 
-So, basically, this is just wraps the Golang DBus API (godbus) with some bluetooth-ish commands
+## What is this?
+Do we need another Bluetooth implementation in Golang? I think so, but maybe not this one. But, in the absence of another one, this one exists.
 
-There is one command that is meant to be something like bluetoothctl.
+There is more than one way to access your bluetooth devices on Linux, but I *think* using Bluez over D-Bus is pretty clean. The big drawback is that it needs D-Bus, which is basically just Linux.
 
-* Dependencies
+## Goals
+Bluez is the linux library that runs over D-Bus. If this client can be minimal and testasble, it should be easier to debug. Bluez is well [documented](https://github.com/bluez/bluez), and this library will only provide that. Perhaps, specifications on top of bluetooth, like iBeacons and Eddystone, can be done in examples.
+
+## Alternatives
+ * gitub.com/go-ble/ble (which is forked from github.com/moogle19/ble ... which is forked from github.com/currantlabs/ble. The two forks were last updated in April and Janary of 2020.
+ * github.com/raff/goble and github.com/paypal/gatt. (MacOS and Linux, respectively).
+ * github.com/muka/go-bluetooth: This uses D-Bus.
+
+Of course, there may be others. go-bluetooth uses the same approach. Namely, Bluez and D-Bus. But, it didn't work out of the box, so I fixed it and made a PR. Then it still didn't work. I tracked down the error, but, at that point, it seemed to risky to continue down that path, so we went with go-ble because it basically worked.
+
+## Dependencies
  - godbus: A nice golang interface to D-Bus
  - testify: I like this for testing
  - readline: This is for the command line interface. Ideally, it would be a selective dependency, or the CLI tool could be a separate module. But, this can really make module fetching messy.
  
-* Testing notes:
+## Testing notes:
  - > device /org/bluez/hci0/dev_FF_F2_DF_D8_10_D4 connect
    This works, but it seems like it's not getting the alert when it is initially found. But it's in the cache. This is one of my ble beacons. No UUID shows up.
  - cached devices are in /var/lib/bluetooth, under the adapter. 
@@ -49,8 +58,10 @@ object /org/bluez/hci0/dev_D1_40_FD_DE_C6_1C dump
 list path org.bluez.GattCharacteristic1
 # This one seems to be valid (but crashed because the in param was nil?)
 object /org/bluez/hci0/dev_D1_40_FD_DE_C6_1C connect 0c4c3000-7700-46f4-aa96-d5e974e32a54
-# calling this without connect will crash
+# Currently crashing on some reflection error. Probably because I don't know what
+# to pass into ReadValue
 gatt /org/bluez/hci0/dev_D1_40_FD_DE_C6_1C/service0026/char002d
+
 
 adapter
 start

@@ -23,10 +23,16 @@ type (
 		Args []Arg  `xml:"arg" json:"arg"`
 	}
 
+	Signal struct {
+		Name string `xml:"name,attr" json:"name,attr"`
+		Args []Arg  `xml:"arg" json:"arg"`
+	}
+
 	// Interface is a descriptino of the Methods, Signals, ans Properties available on a remote object
 	Interface struct {
 		Name    string   `xml:"name,attr" json:"name,attr"`
 		Methods []Method `xml:"method" json:"method"`
+		Signals []Signal `xml:"signal" json:"signal"`
 	}
 
 	// Node can represent an interface and a set of nodes underneath this node in the hierarchy.
@@ -70,8 +76,17 @@ func (a *Arg) String() string {
 }
 
 func (m *Method) String() string {
-	s := "Node: " + m.Name
+	s := "Method: " + m.Name
 	for _, a := range m.Args {
+		s += a.String()
+	}
+	s += "\n"
+	return s
+}
+
+func (si *Signal) String() string {
+	s := "Signal: " + si.Name
+	for _, a := range si.Args {
 		s += a.String()
 	}
 	s += "\n"
@@ -80,9 +95,13 @@ func (m *Method) String() string {
 
 func (i *Interface) String() string {
 	s := "\nInterface: " + i.Name
-	// for _, m := range i.Methods {
-	// 	s += m.String()
-	// }
+	for _, m := range i.Methods {
+		s += m.String()
+	}
+	s += "\n"
+	for _, si := range i.Signals {
+		s += si.String()
+	}
 	s += "\n"
 	return s
 }

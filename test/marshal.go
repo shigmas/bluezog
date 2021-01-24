@@ -34,6 +34,11 @@ func readBytes(data interface{}, n string) error {
 }
 
 // MarshalIntrospect writes the introspect data and returns the file name or error
+func MarshalRaw(b []byte, prefix string) (string, error) {
+	return writeBytes(b, fmt.Sprintf("raw-%s-", prefix))
+}
+
+// MarshalIntrospect writes the introspect data and returns the file name or error
 func MarshalIntrospect(n *base.Node) (string, error) {
 	introBytes, err := json.Marshal(n)
 	if err != nil {
