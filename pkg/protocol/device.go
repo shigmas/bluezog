@@ -17,6 +17,10 @@ type (
 	}
 )
 
+var (
+	_ Connectable = (*Device)(nil)
+)
+
 func init() {
 	typeRegistry[BluezInterface.Device] = func(conn *bluezConn, name dbus.ObjectPath, data base.ObjectMap) Base {
 		return newDevice(conn, name, data)

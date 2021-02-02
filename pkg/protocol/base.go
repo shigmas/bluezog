@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
@@ -24,6 +25,13 @@ type (
 		GetInterfaces() []string
 		// Update is called from the main signal handler for updates to the objects in the registry
 		Update(data base.ObjectMap) error
+	}
+
+	Connectable interface {
+		Connect(ctx context.Context) error
+		ConnectProfile(ctx context.Context, uuid string) error
+		Disconnect(ctx context.Context) error
+		DisconnectProfile(ctx context.Context, uuid string) error
 	}
 
 	// BaseObject has some objects and implementation so children don't need to implement the

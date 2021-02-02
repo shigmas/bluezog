@@ -187,6 +187,7 @@ func (b *bluezConn) createObject(path dbus.ObjectPath, data base.ObjectMap) Base
 			break
 		}
 	}
+
 	return newObj
 }
 
@@ -369,6 +370,9 @@ func (b *bluezConn) handleSignals(ctx context.Context) {
 			// Doesn't exist. Create the new object
 			//logger.Info("Creating new path %s", path)
 			obj = b.createObject(path, data)
+			if obj == nil {
+				logger.Info("Unable to create object with path %s", path)
+			}
 			b.registryMux.RLock()
 			b.objectRegistry[path] = obj
 			b.registryMux.RUnlock()
@@ -391,6 +395,8 @@ func (b *bluezConn) handleSignals(ctx context.Context) {
 					}
 				} else if path == p {
 					fmt.Println("Non newObjectChangedData channel data")
+				} else {
+					fmt.Printf("%s: Non handled data: %s", sigData.Name, path)
 				}
 			}
 			b.sigWatchersMux.RUnlock()
