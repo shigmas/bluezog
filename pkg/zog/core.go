@@ -149,6 +149,15 @@ func printNode(n *base.Node) string {
 	return str
 }
 
+func isInt(i interface{}) bool {
+	switch v := reflect.ValueOf(i); v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return true
+	default:
+		return false
+	}
+}
+
 // ObjectCommands provide the API to send commands to devices
 func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 	// device /org/bluez/hci0/dev_FE_CD_66_43_D8_9E connect 00001800-0000-1000-8000-00805f9b34fb 00001801-0000-1000-8000-00805f9b34fb
@@ -169,7 +178,7 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 		return fmt.Errorf("No devices in registry with address %s", addressArg)
 	}
 	base := objs[0]
-	device, ok := base.(*protocol.Device)
+	connectable, ok := base.(protocol.Connectable)
 	if !ok && (command == "connect" || command == "disconnect") {
 		return fmt.Errorf("Base is not a Device")
 	}
@@ -183,7 +192,12 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 		fmt.Printf("Path: %s\n", base.GetPath())
 		props := base.AllProperties()
 		for k, variant := range props {
-			fmt.Printf("%s: %s\n", k, variant.Value())
+			val := variant.Value()
+			if isInt(val) {
+				fmt.Printf("%s: %d\n", k, val)
+			} else {
+				fmt.Printf("%s: %s (%s)\n", k, val, reflect.TypeOf(val))
+			}
 		}
 	case "introspect":
 		node, err := b.bluez.IntrospectPath(addressArg)
@@ -201,15 +215,18 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 	case "connect":
 		// device /org/bluez/hci0/dev_D7_57_C6_C2_0B_FA connect
 		var err error
+		if connectable == nil {
+			return fmt.Errorf("Object is not connectable")
+		}
 		if len(args) == 3 {
 			uuid, ok := args[2].(string)
 			if !ok {
 				return fmt.Errorf("Unable to convert %s to string", args[2])
 			}
-			err = device.ConnectProfile(ctx, uuid)
+			err = connectable.ConnectProfile(ctx, uuid)
 			fmt.Println("ConnectProfile")
 		} else {
-			err = device.Connect(ctx)
+			err = connectable.Connect(ctx)
 		}
 		if err != nil {
 			return fmt.Errorf("Unable to connect to device %s: %s", addressArg, err)
@@ -217,15 +234,18 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 	case "disconnect":
 		// device /org/bluez/hci0/dev_D7_57_C6_C2_0B_FA disconnect
 		var err error
+		if connectable == nil {
+			return fmt.Errorf("Object is not connectable")
+		}
 		if len(args) == 3 {
 			uuid, ok := args[2].(string)
 			if !ok {
 				return fmt.Errorf("Unable to convert %s to string", args[2])
 			}
-			err = device.DisconnectProfile(ctx, uuid)
+			err = connectable.DisconnectProfile(ctx, uuid)
 			fmt.Println("ConnectProfile")
 		} else {
-			err = device.Disconnect(ctx)
+			err = connectable.Disconnect(ctx)
 		}
 		if err != nil {
 			return fmt.Errorf("Unable to connect to device %s: %s", addressArg, err)
@@ -238,7 +258,7 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 		if !ok {
 			return fmt.Errorf("Unable to %s to string", args[2])
 		}
-		prop, err := device.FetchProperty(propName)
+		prop, err := base.FetchProperty(propName)
 		if err != nil {
 			return fmt.Errorf("Failed to get property [%s]: %s", propName, err)
 		}
@@ -250,13 +270,24 @@ func (b *BusImpl) ObjectCommands(args ...interface{}) error {
 
 // Gatt provides access to the GATT functionality
 func (b *BusImpl) Gatt(args ...interface{}) error {
-	if len(args) != 1 {
+	if len(args) < 1 {
 		return fmt.Errorf("gatt needs an address")
 	}
 	addressArg, ok := args[0].(string)
 	if !ok {
 		return fmt.Errorf("Unable to convert %s to string", args[0])
 	}
+
+	op := ""
+	if len(args) >= 2 {
+		opArg, ok := args[1].(string)
+		if !ok {
+			return fmt.Errorf("Unable to convert %s to string", args[1])
+		}
+		op = opArg
+	}
+	fmt.Printf("Op: %s\n", op)
+
 	parts := strings.Split(addressArg, "/")
 	objs := b.bluez.FindObjects(addressArg, true)
 	if len(objs) == 0 {
@@ -291,6 +322,13 @@ func (b *BusImpl) Gatt(args ...interface{}) error {
 			return err
 		}
 		fmt.Printf("Char: %s\n", val)
+		if op != "" && op == "notify" {
+			fmt.Println("StartNotify")
+			return characteristic.StartNotify()
+		} else if op != "" && op == "stop" {
+			fmt.Println("StopNotify")
+			return characteristic.StopNotify()
+		}
 	} else if len(parts) == 8 {
 		return fmt.Errorf("Path appeared to a GATT Descriptor, but not implemented")
 	} else {

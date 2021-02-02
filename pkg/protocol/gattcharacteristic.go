@@ -2,15 +2,20 @@ package protocol
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/shigmas/bluezog/pkg/base"
+	"github.com/shigmas/bluezog/pkg/bus"
 )
 
 type (
 	// GattCharacteristic is a bluetooth device associated with a GATT Characteristic.
 	GattCharacteristic struct {
 		BaseObject
+		notifyMux sync.Mutex
+		notifyCh  ObjectChangedChan
 	}
 )
 
@@ -48,4 +53,33 @@ func (gc *GattCharacteristic) ReadValue(ctx context.Context, offset uint16) ([]b
 		BluezGATTCharacteristic.ReadValue, args)
 
 	return val, err
+}
+
+// StartNotify will start receiving notifications for this characteristic
+func (gc *GattCharacteristic) StartNotify() error {
+	gc.notifyMux.Lock()
+	defer gc.notifyMux.Unlock()
+	if gc.notifyCh != nil {
+		return fmt.Errorf("Discovery already started")
+	}
+
+	ch, err := gc.bluez.AddWatch(gc.Path,
+		[]InterfaceSignalPair{
+			{bus.Properties,
+				bus.PropertiesFuncs.PropertiesChanged},
+		})
+	if err != nil {
+		return err
+	}
+	gc.notifyCh = ch
+
+	return gc.bluez.ops.CallFunction(context.Background(), BluezDest, gc.Path,
+		BluezGATTCharacteristic.StartNotify)
+
+}
+
+// StopNotify will stop receiving notifications for this characteristic
+func (gc *GattCharacteristic) StopNotify() error {
+	return gc.bluez.ops.CallFunction(context.Background(), BluezDest, gc.Path,
+		BluezGATTCharacteristic.StopNotify)
 }

@@ -72,8 +72,10 @@ type (
 	}
 
 	bluezGATTCharacteristic struct {
-		ReadValue  string
-		WriteValue string
+		ReadValue   string
+		WriteValue  string
+		StartNotify string
+		StopNotify  string
 	}
 	bluezGATTDescriptor struct {
 		ReadValue  string
@@ -136,8 +138,10 @@ var (
 
 	// BluezGATTCharacteristic are the constants for the GATT characteristic
 	BluezGATTCharacteristic = bluezGATTCharacteristic{
-		ReadValue:  BluezInterface.GATTCharacteristic + ".ReadValue",
-		WriteValue: BluezInterface.GATTCharacteristic + ".WriteValue",
+		ReadValue:   BluezInterface.GATTCharacteristic + ".ReadValue",
+		WriteValue:  BluezInterface.GATTCharacteristic + ".WriteValue",
+		StartNotify: BluezInterface.GATTCharacteristic + ".StartNotify",
+		StopNotify:  BluezInterface.GATTCharacteristic + ".StopNotify",
 	}
 
 	// BluezGATTDescriptor are the constants for the GATT descriptor
